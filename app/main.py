@@ -9,6 +9,9 @@ from app.routers import auth, users, suppliers, shops, products, rfq, quotes, ne
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Create tables
+    print(f"🚀 Starting B2B Marketplace API...")
+    print(f"📋 CORS_ORIGINS env: {settings.CORS_ORIGINS}")
+    print(f"📋 CORS origins list: {settings.get_cors_origins()}")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
@@ -24,10 +27,14 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+# Get CORS origins
+cors_origins = settings.get_cors_origins()
+print(f"🔧 Configuring CORS with origins: {cors_origins}")
+
 # CORS - cho phép frontend truy cập
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.get_cors_origins(),
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -55,7 +62,9 @@ async def health_check():
 
 @app.get("/debug/cors", tags=["Debug"])
 async def debug_cors():
+    """Debug endpoint to check CORS configuration"""
     return {
+        "cors_env": settings.CORS_ORIGINS,
         "cors_origins": settings.get_cors_origins(),
-        "all_origins": settings.CORS_ORIGINS
+        "message": "Check if your frontend URL is in cors_origins list"
     }
