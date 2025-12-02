@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     # CORS - as string, will be parsed manually
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
+    CORS_ORIGINS: str = "https://b2b-marketplace-zeta.vercel.app/,http://localhost:5173"
     
     # App
     DEBUG: bool = False
