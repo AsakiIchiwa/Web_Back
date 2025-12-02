@@ -1,0 +1,28 @@
+# Render Blueprint - https://render.com/docs/blueprint-spec
+services:
+  # Backend API
+  - type: web
+    name: b2b-marketplace-api
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt && python -m app.seed
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: b2b-marketplace-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: https://your-frontend.vercel.app,http://localhost:5173
+      - key: DEBUG
+        value: false
+
+databases:
+  - name: b2b-marketplace-db
+    plan: free
+    region: singapore
+    databaseName: b2b_marketplace
+    user: b2b_user
