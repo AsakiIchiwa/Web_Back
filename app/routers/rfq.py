@@ -5,7 +5,7 @@ from sqlalchemy.orm import selectinload
 from typing import List
 
 from app.database import get_db
-from app.models import User, Supplier, RFQ, RFQStatus
+from app.models import User, Supplier, RFQ, RFQStatus, Product
 from app.schemas import RFQResponse, RFQWithDetails
 from app.auth import get_current_user
 
@@ -19,7 +19,7 @@ async def list_rfqs(
     """List RFQs relevant to current user"""
     query = select(RFQ).options(
         selectinload(RFQ.shop),
-        selectinload(RFQ.product).selectinload(lambda p: p.supplier),
+        selectinload(RFQ.product).selectinload(Product.supplier),
         selectinload(RFQ.quotes)
     )
     
@@ -30,9 +30,17 @@ async def list_rfqs(
         )
         supplier = result.scalar_one_or_none()
         if supplier:
-            from app.models import Product
             subquery = select(Product.id).where(Product.supplier_id == supplier.id)
             query = query.where(RFQ.product_id.in_(subquery))
+    elif current_user.role.value == "shop":
+        # Get shop's own RFQs
+        from app.models import Shop
+        result = await db.execute(
+            select(Shop).where(Shop.user_id == current_user.id)
+        )
+        shop = result.scalar_one_or_none()
+        if shop:
+            query = query.where(RFQ.shop_id == shop.id)
     
     query = query.order_by(RFQ.created_at.desc())
     result = await db.execute(query)

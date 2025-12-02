@@ -176,13 +176,6 @@ class QuoteResponse(QuoteBase):
     status: QuoteStatus
     created_at: datetime
     
-    @property
-    def lead_time_display(self) -> Optional[str]:
-        """Return lead time in Vietnamese format"""
-        if self.lead_time is not None:
-            return f"{self.lead_time} ngày"
-        return None
-    
     class Config:
         from_attributes = True
 
