@@ -1,4 +1,4 @@
-# FastAPI & Web
+# Web Framework
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
 python-multipart==0.0.6
@@ -15,9 +15,8 @@ bcrypt==4.1.2
 
 # Validation & Settings
 pydantic==2.10.3
-pydantic-core==2.27.0
 pydantic-settings==2.1.0
 email-validator==2.1.0.post1
 
-# Utils
+# Environment
 python-dotenv==1.0.0
