@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     def get_cors_origins(self) -> List[str]:
         """Parse CORS_ORIGINS string to list"""
         if not self.CORS_ORIGINS:
-            return ["http://localhost:3000", "http://localhost:5173"]
+            return ["https://b2b-marketplace-zeta.vercel.app/","http://localhost:3000", "http://localhost:5173"]
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     def __init__(self, **kwargs):

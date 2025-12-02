@@ -52,3 +52,10 @@ async def root():
 @app.get("/health", tags=["Health"])
 async def health_check():
     return {"status": "healthy", "version": "1.0.0"}
+
+@app.get("/debug/cors", tags=["Debug"])
+async def debug_cors():
+    return {
+        "cors_origins": settings.get_cors_origins(),
+        "all_origins": settings.CORS_ORIGINS
+    }
