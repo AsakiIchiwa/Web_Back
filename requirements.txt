@@ -20,3 +20,6 @@ email-validator==2.1.0.post1
 
 # Environment
 python-dotenv==1.0.0
+
+# HTTP Client (for Resend API)
+httpx==0.26.0
