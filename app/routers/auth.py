@@ -92,7 +92,11 @@ async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid verification token")
     
     if user.email_verified:
-        return {"message": "Email already verified", "status": "already_verified"}
+        return {
+            "message": "Email already verified", 
+            "status": "already_verified",
+            "email": user.email
+        }
     
     # Check if token expired
     if user.verification_token_expires and user.verification_token_expires.replace(tzinfo=None) < datetime.utcnow():
@@ -108,6 +112,7 @@ async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
     return {
         "message": "Email verified successfully! Please wait for admin approval.",
         "status": "verified",
+        "email": user.email,
         "awaiting_approval": not user.is_approved
     }
 
