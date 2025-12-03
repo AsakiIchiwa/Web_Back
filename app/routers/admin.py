@@ -75,6 +75,48 @@ async def get_pending_users(
     return result.scalars().all()
 
 
+@router.get("/users/unverified", response_model=List[UserResponse])
+async def get_unverified_users(
+    current_user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get users with unverified email"""
+    result = await db.execute(
+        select(User)
+        .where(
+            User.email_verified == False,
+            User.role != UserRole.ADMIN
+        )
+        .order_by(User.created_at.desc())
+    )
+    return result.scalars().all()
+
+
+@router.patch("/users/{user_id}/verify-email", response_model=UserResponse)
+async def admin_verify_email(
+    user_id: int,
+    current_user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Admin manually verify user email (for testing/support)"""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user.email_verified:
+        raise HTTPException(status_code=400, detail="Email already verified")
+    
+    user.email_verified = True
+    user.verification_token = None
+    user.verification_token_expires = None
+    
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
 @router.patch("/users/{user_id}/approve", response_model=UserResponse)
 async def approve_user(
     user_id: int,

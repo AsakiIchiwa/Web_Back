@@ -224,9 +224,16 @@ async def send_verification_email(
         if result:
             return True
     
-    # Dev mode: print token
-    print(f"⚠️ Email not configured. Verification link for {to_email}:")
+    # Dev mode: print token with clear formatting
+    print(f"")
+    print(f"{'='*60}")
+    print(f"⚠️  EMAIL NOT CONFIGURED - DEV MODE")
+    print(f"{'='*60}")
+    print(f"📧 To: {to_email}")
+    print(f"🔗 Verification Link:")
     print(f"   {verify_url}")
+    print(f"{'='*60}")
+    print(f"")
     return True  # Return True to allow registration in dev mode
 
 

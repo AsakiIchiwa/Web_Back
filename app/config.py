@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # Resend API (recommended for production)
     RESEND_API_KEY: Optional[str] = "re_AfovjC4a_KZ5X7gWDTqbgUrqJNFuY8KhX"
-    EMAIL_FROM: Optional[str] = "hoangbaominh22112002@gmail.com"  # e.g., "B2B Marketplace <noreply@yourdomain.com>"
+    EMAIL_FROM: Optional[str] = "B2B Marketplace <no-reply@bmdtlab.site>"  # e.g., "B2B Marketplace <noreply@yourdomain.com>"
     
     
     # Frontend URL (for email links)
