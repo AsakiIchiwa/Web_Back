@@ -10,17 +10,12 @@ from app.models import User, Supplier, Shop, Product, RFQ, Quote, Contract, Nego
 from app.auth import get_password_hash
 
 async def seed():
-    # Create tables
+    # Drop all tables and recreate them
     async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     
     async with AsyncSessionLocal() as db:
-        # Check if data exists
-        result = await db.execute(select(User).limit(1))
-        if result.scalar_one_or_none():
-            print("Database already seeded!")
-            return
-        
         print("Seeding database...")
         
         # Create Admin (auto verified and approved)
