@@ -143,12 +143,12 @@ async def seed():
             created_rfqs.append(rfq)
         
         # Create Quotes - Supplier báo giá cho RFQ
+        # Create Quotes - Supplier báo giá cho RFQ
         quotes_data = [
-            {"rfq_idx": 0, "supplier_idx": 0, "price": 33000000, "min_qty": 5, "lead_time": "7 ngày", "message": "Giảm giá 5% cho đơn hàng trên 5 máy", "status": QuoteStatus.PENDING},
-            {"rfq_idx": 1, "supplier_idx": 1, "price": 230000, "min_qty": 50, "lead_time": "3 ngày", "message": "Freeship cho đơn trên 50 gói", "status": QuoteStatus.ACCEPTED},
-            {"rfq_idx": 3, "supplier_idx": 0, "price": 26500000, "min_qty": 10, "lead_time": "5 ngày", "message": "Giá sỉ đặc biệt cho đại lý", "status": QuoteStatus.PENDING},
-        ]
-        
+    {"rfq_idx": 0, "supplier_idx": 0, "price": 33000000, "min_qty": 5, "lead_time": 7, "message": "Giảm giá 5% cho đơn hàng trên 5 máy", "status": QuoteStatus.PENDING},
+    {"rfq_idx": 1, "supplier_idx": 1, "price": 230000, "min_qty": 50, "lead_time": 3, "message": "Freeship cho đơn trên 50 gói", "status": QuoteStatus.ACCEPTED},
+    {"rfq_idx": 3, "supplier_idx": 0, "price": 26500000, "min_qty": 10, "lead_time": 5, "message": "Giá sỉ đặc biệt cho đại lý", "status": QuoteStatus.PENDING},
+                    ]
         created_quotes = []
         for q in quotes_data:
             quote = Quote(
