@@ -23,16 +23,18 @@ async def seed():
         
         print("Seeding database...")
         
-        # Create Admin
+        # Create Admin (auto verified and approved)
         admin = User(
             email="admin@b2bmarket.com",
             password_hash=get_password_hash("Admin123!"),
             full_name="Admin User",
-            role=UserRole.ADMIN
+            role=UserRole.ADMIN,
+            email_verified=True,
+            is_approved=True
         )
         db.add(admin)
         
-        # Create Suppliers
+        # Create Suppliers (verified and approved for testing)
         suppliers_data = [
             {"email": "supplier1@techcorp.com", "name": "Tech Corp Vietnam", "company": "Tech Corp", "desc": "Nhà cung cấp linh kiện điện tử hàng đầu"},
             {"email": "supplier2@foodco.com", "name": "Food Co", "company": "Food & Beverage Co", "desc": "Thực phẩm và đồ uống chất lượng cao"},
@@ -45,7 +47,9 @@ async def seed():
                 email=s["email"],
                 password_hash=get_password_hash("Supplier123!"),
                 full_name=s["name"],
-                role=UserRole.SUPPLIER
+                role=UserRole.SUPPLIER,
+                email_verified=True,
+                is_approved=True
             )
             db.add(user)
             await db.flush()
@@ -61,7 +65,7 @@ async def seed():
             await db.flush()
             created_suppliers.append(supplier)
         
-        # Create Shops
+        # Create Shops (verified and approved for testing)
         shops_data = [
             {"email": "shop1@retailplus.com", "name": "Retail Plus", "shop": "Retail Plus Store"},
             {"email": "shop2@minimart.com", "name": "Mini Mart", "shop": "Mini Mart Chain"},
@@ -73,7 +77,9 @@ async def seed():
                 email=s["email"],
                 password_hash=get_password_hash("Shop123!"),
                 full_name=s["name"],
-                role=UserRole.SHOP
+                role=UserRole.SHOP,
+                email_verified=True,
+                is_approved=True
             )
             db.add(user)
             await db.flush()
@@ -143,9 +149,9 @@ async def seed():
         
         # Create Quotes - Supplier báo giá cho RFQ
         quotes_data = [
-    {"rfq_idx": 0, "supplier_idx": 0, "price": 33000000, "min_qty": 5, "lead_time": 7, "message": "Giảm giá 5% cho đơn hàng trên 5 máy", "status": QuoteStatus.PENDING},
-    {"rfq_idx": 1, "supplier_idx": 1, "price": 230000, "min_qty": 50, "lead_time": 3, "message": "Freeship cho đơn trên 50 gói", "status": QuoteStatus.ACCEPTED},
-    {"rfq_idx": 3, "supplier_idx": 0, "price": 26500000, "min_qty": 10, "lead_time": 5, "message": "Giá sỉ đặc biệt cho đại lý", "status": QuoteStatus.PENDING},
+            {"rfq_idx": 0, "supplier_idx": 0, "price": 33000000, "min_qty": 5, "lead_time": "7 ngày", "message": "Giảm giá 5% cho đơn hàng trên 5 máy", "status": QuoteStatus.PENDING},
+            {"rfq_idx": 1, "supplier_idx": 1, "price": 230000, "min_qty": 50, "lead_time": "3 ngày", "message": "Freeship cho đơn trên 50 gói", "status": QuoteStatus.ACCEPTED},
+            {"rfq_idx": 3, "supplier_idx": 0, "price": 26500000, "min_qty": 10, "lead_time": "5 ngày", "message": "Giá sỉ đặc biệt cho đại lý", "status": QuoteStatus.PENDING},
         ]
         
         created_quotes = []

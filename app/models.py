@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Numeric, ForeignKey, DateTime, Date, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, Text, Numeric, ForeignKey, DateTime, Date, Enum as SQLEnum, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -39,6 +39,14 @@ class User(Base):
     password_hash = Column(Text, nullable=False)
     full_name = Column(String(255))
     role = Column(SQLEnum(UserRole), nullable=False, default=UserRole.SHOP)
+    
+    # Verification & Approval
+    email_verified = Column(Boolean, default=False)
+    is_approved = Column(Boolean, default=False)
+    verification_token = Column(String(255), nullable=True)
+    verification_token_expires = Column(DateTime(timezone=True), nullable=True)
+    rejected_reason = Column(Text, nullable=True)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     

@@ -44,6 +44,9 @@ class UserUpdate(BaseModel):
     
 class UserResponse(UserBase):
     id: int
+    email_verified: bool = False
+    is_approved: bool = False
+    rejected_reason: Optional[str] = None
     created_at: datetime
     
     class Config:
