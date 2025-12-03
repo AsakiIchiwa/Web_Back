@@ -4,10 +4,10 @@ import os
 
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/b2b_marketplace"
+    DATABASE_URL: str = "postgresql://bmdtlab_postgres_user:2kbLp1bXScsHybzNfim5sQHghAilNRXG@dpg-d4nado4hg0os73cidjug-a.singapore-postgres.render.com/bmdtlab_postgres"
     
     # JWT
-    SECRET_KEY: str = "your-secret-key-change-in-production-min-32-chars"
+    SECRET_KEY: str = "ddd8483072cef66d7e8d71bc67cc4006"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: Optional[str] = None
     
     # Frontend URL (for email links)
-    FRONTEND_URL: str = "http://localhost:5173"
+    FRONTEND_URL: str = "https://b2b-marketplace-zeta.vercel.app"
     
     # App
     DEBUG: bool = False
@@ -35,6 +35,7 @@ class Settings(BaseSettings):
         """Parse CORS_ORIGINS string to list"""
         # Default origins
         default_origins = [
+            "https://b2b-marketplace-zeta.vercel.app",
             "http://localhost:3000",
             "http://localhost:5173",
             "http://127.0.0.1:5173",
