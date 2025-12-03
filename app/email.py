@@ -147,6 +147,9 @@ async def send_email_resend(to_email: str, subject: str, html_content: str) -> b
         return False
     
     try:
+        # Use verified domain from settings, fallback to bmdtlab.site
+        from_email = settings.EMAIL_FROM or "B2B Marketplace <noreply@bmdtlab.site>"
+        
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 "https://api.resend.com/emails",
@@ -155,7 +158,7 @@ async def send_email_resend(to_email: str, subject: str, html_content: str) -> b
                     "Content-Type": "application/json"
                 },
                 json={
-                    "from": settings.EMAIL_FROM or "B2B Marketplace <onboarding@resend.dev>",
+                    "from": from_email,
                     "to": [to_email],
                     "subject": subject,
                     "html": html_content
