@@ -282,3 +282,135 @@ async def list_all_shops(
         select(Shop).options(selectinload(Shop.user))
     )
     return result.scalars().all()
+
+
+@router.get("/rfqs")
+async def list_all_rfqs(
+    current_user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all RFQs with full details (admin)"""
+    from app.models import Quote
+    
+    result = await db.execute(
+        select(RFQ).options(
+            selectinload(RFQ.product).selectinload(Product.supplier).selectinload(Supplier.user),
+            selectinload(RFQ.shop).selectinload(Shop.user),
+            selectinload(RFQ.quotes).selectinload(Quote.supplier)
+        ).order_by(RFQ.created_at.desc())
+    )
+    rfqs = result.scalars().all()
+    
+    return [
+        {
+            "id": rfq.id,
+            "product_id": rfq.product_id,
+            "shop_id": rfq.shop_id,
+            "quantity": rfq.quantity,
+            "target_price": rfq.target_price,
+            "message": rfq.message,
+            "status": rfq.status.value if rfq.status else "pending",
+            "created_at": rfq.created_at.isoformat() if rfq.created_at else None,
+            "product": {
+                "id": rfq.product.id,
+                "name": rfq.product.name,
+                "category": rfq.product.category,
+                "unit": rfq.product.unit,
+                "supplier": {
+                    "id": rfq.product.supplier.id,
+                    "company_name": rfq.product.supplier.company_name,
+                    "phone": rfq.product.supplier.phone,
+                    "user": {
+                        "id": rfq.product.supplier.user.id,
+                        "full_name": rfq.product.supplier.user.full_name,
+                        "email": rfq.product.supplier.user.email,
+                    } if rfq.product.supplier.user else None
+                } if rfq.product.supplier else None
+            } if rfq.product else None,
+            "shop": {
+                "id": rfq.shop.id,
+                "shop_name": rfq.shop.shop_name,
+                "phone": rfq.shop.phone,
+                "address": rfq.shop.address,
+                "user": {
+                    "id": rfq.shop.user.id,
+                    "full_name": rfq.shop.user.full_name,
+                    "email": rfq.shop.user.email,
+                    "phone": rfq.shop.user.phone,
+                } if rfq.shop.user else None
+            } if rfq.shop else None,
+            "quotes": [
+                {
+                    "id": q.id,
+                    "price_per_unit": q.price_per_unit,
+                    "delivery_time": q.delivery_time,
+                    "note": q.note,
+                    "status": q.status.value if q.status else "pending",
+                    "created_at": q.created_at.isoformat() if q.created_at else None,
+                    "supplier": {
+                        "company_name": q.supplier.company_name if q.supplier else None
+                    }
+                }
+                for q in rfq.quotes
+            ] if rfq.quotes else []
+        }
+        for rfq in rfqs
+    ]
+
+
+@router.get("/contracts")
+async def list_all_contracts(
+    current_user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all contracts with full details (admin)"""
+    result = await db.execute(
+        select(Contract).options(
+            selectinload(Contract.product),
+            selectinload(Contract.supplier).selectinload(Supplier.user),
+            selectinload(Contract.shop).selectinload(Shop.user)
+        ).order_by(Contract.created_at.desc())
+    )
+    contracts = result.scalars().all()
+    
+    return [
+        {
+            "id": c.id,
+            "quantity": c.quantity,
+            "agreed_price": c.agreed_price,
+            "status": c.status.value if c.status else "draft",
+            "start_date": c.start_date.isoformat() if c.start_date else None,
+            "end_date": c.end_date.isoformat() if c.end_date else None,
+            "terms": c.terms,
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+            "product": {
+                "id": c.product.id,
+                "name": c.product.name,
+                "category": c.product.category,
+                "unit": c.product.unit,
+            } if c.product else None,
+            "supplier": {
+                "id": c.supplier.id,
+                "company_name": c.supplier.company_name,
+                "phone": c.supplier.phone,
+                "address": c.supplier.address,
+                "user": {
+                    "id": c.supplier.user.id,
+                    "full_name": c.supplier.user.full_name,
+                    "email": c.supplier.user.email,
+                } if c.supplier.user else None
+            } if c.supplier else None,
+            "shop": {
+                "id": c.shop.id,
+                "shop_name": c.shop.shop_name,
+                "phone": c.shop.phone,
+                "address": c.shop.address,
+                "user": {
+                    "id": c.shop.user.id,
+                    "full_name": c.shop.user.full_name,
+                    "email": c.shop.user.email,
+                } if c.shop.user else None
+            } if c.shop else None,
+        }
+        for c in contracts
+    ]
