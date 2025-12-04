@@ -307,7 +307,7 @@ async def list_all_rfqs(
             "product_id": rfq.product_id,
             "shop_id": rfq.shop_id,
             "quantity": rfq.quantity,
-            "target_price": rfq.target_price,
+            # "target_price": rfq.target_price,
             "message": rfq.message,
             "status": rfq.status.value if rfq.status else "pending",
             "created_at": rfq.created_at.isoformat() if rfq.created_at else None,
