@@ -23,3 +23,5 @@ python-dotenv==1.0.0
 
 # HTTP Client (for Resend API)
 httpx==0.26.0
+
+openai>=1.40.0
