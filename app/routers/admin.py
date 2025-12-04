@@ -315,7 +315,7 @@ async def list_all_rfqs(
                 "id": rfq.product.id,
                 "name": rfq.product.name,
                 "category": rfq.product.category,
-                "unit": rfq.product.unit,
+                # "unit": rfq.product.unit,
                 "supplier": {
                     "id": rfq.product.supplier.id,
                     "company_name": rfq.product.supplier.company_name,
