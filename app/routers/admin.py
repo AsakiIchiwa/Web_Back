@@ -336,8 +336,7 @@ async def list_all_rfqs(
                     "id": rfq.shop.user.id,
                     "full_name": rfq.shop.user.full_name,
                     "email": rfq.shop.user.email,
-                    "phone": rfq.shop.user.phone,
-                } if rfq.shop.user else None
+                }if rfq.shop.user else None
             } if rfq.shop else None,
             "quotes": [
                 {
@@ -381,7 +380,6 @@ async def list_all_contracts(
             "status": c.status.value if c.status else "draft",
             "start_date": c.start_date.isoformat() if c.start_date else None,
             "end_date": c.end_date.isoformat() if c.end_date else None,
-            "terms": c.terms,
             "created_at": c.created_at.isoformat() if c.created_at else None,
             "product": {
                 "id": c.product.id,
