@@ -339,19 +339,19 @@ async def list_all_rfqs(
                 }if rfq.shop.user else None
             } if rfq.shop else None,
             "quotes": [
-                {
-                    "id": q.id,
-                    "price_per_unit": q.price_per_unit,
-                    "delivery_time": q.delivery_time,
-                    "note": q.note,
-                    "status": q.status.value if q.status else "pending",
-                    "created_at": q.created_at.isoformat() if q.created_at else None,
-                    "supplier": {
-                        "company_name": q.supplier.company_name if q.supplier else None
-                    }
-                }
-                for q in rfq.quotes
-            ] if rfq.quotes else []
+            {
+                "id": q.id,
+                "price_per_unit": q.price,      # ← Changed
+                "delivery_time": q.lead_time,    # ← Changed
+                "note": q.message,               # ← Changed
+                "status": q.status.value if q.status else "pending",
+                "created_at": q.created_at.isoformat() if q.created_at else None,
+                "supplier": {
+                "company_name": q.supplier.company_name if q.supplier else None
+                    } if q.supplier else None
+            }
+    for q in rfq.quotes
+] if rfq.quotes else []
         }
         for rfq in rfqs
     ]
@@ -385,7 +385,7 @@ async def list_all_contracts(
                 "id": c.product.id,
                 "name": c.product.name,
                 "category": c.product.category,
-                "unit": c.product.unit,
+                "description": c.product.description,  # ← Changed (or you can use price, stock, image_url, etc.)
             } if c.product else None,
             "supplier": {
                 "id": c.supplier.id,
