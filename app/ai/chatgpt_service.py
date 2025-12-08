@@ -11,7 +11,7 @@ import httpx
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
-from app.models import Product, Quote, Contract, RFQ, Supplier, Shop
+from app.models import Product, Quote, Contract, RFQ, Supplier, Shop, ProductStatus
 
 
 class ChatGPTService:
@@ -308,7 +308,7 @@ class ChatGPTService:
     
     async def _get_market_context(self, category: str) -> Dict:
         """Get market context data for AI"""
-        # Products count and price range
+        # Products count and price range - FIXED: Use status instead of is_active
         result = await self.db.execute(
             select(
                 func.count(Product.id),
@@ -318,7 +318,7 @@ class ChatGPTService:
             ).where(
                 and_(
                     Product.category == category,
-                    Product.is_active == True
+                    Product.status == ProductStatus.ACTIVE  # FIXED: Changed from is_active
                 )
             )
         )
@@ -359,12 +359,12 @@ class ChatGPTService:
         if not supplier:
             return {"error": "Supplier not found"}
         
-        # Get products count
+        # Get products count - FIXED: Use status instead of is_active
         products_result = await self.db.execute(
             select(func.count(Product.id)).where(
                 and_(
                     Product.supplier_id == supplier_id,
-                    Product.is_active == True
+                    Product.status == ProductStatus.ACTIVE  # FIXED: Changed from is_active
                 )
             )
         )
