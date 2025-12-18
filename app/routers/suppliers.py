@@ -5,7 +5,7 @@ from sqlalchemy.orm import selectinload
 from typing import List, Optional
 
 from app.database import get_db
-from app.models import User, Supplier, Product, Quote, UserRole, ProductStatus
+from app.models import User, Supplier, Product, Quote, RFQ, RFQStatus, UserRole, ProductStatus
 from app.schemas import (
     SupplierResponse, SupplierUpdate, SupplierWithUser,
     ProductCreate, ProductResponse, ProductUpdate,
@@ -188,11 +188,21 @@ async def respond_to_rfq(
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier profile not found")
     
+    # Create quote
     quote = Quote(
         supplier_id=supplier.id,
         **data.model_dump()
     )
     db.add(quote)
+    
+    # Update RFQ status to QUOTED if it's still PENDING
+    result = await db.execute(
+        select(RFQ).where(RFQ.id == data.rfq_id)
+    )
+    rfq = result.scalar_one_or_none()
+    if rfq and rfq.status == RFQStatus.PENDING:
+        rfq.status = RFQStatus.QUOTED
+    
     await db.commit()
     await db.refresh(quote)
     return quote
