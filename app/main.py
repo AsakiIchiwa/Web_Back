@@ -4,7 +4,8 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.database import engine, Base
-from app.routers import auth, users, suppliers, shops, products, rfq, quotes, negotiations, contracts, admin, ai  # ← ADD ai HERE
+from app.routers import auth, users, suppliers, shops, products, rfq, quotes, negotiations, contracts, admin, ai, notifications, upload
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Create tables
@@ -47,10 +48,19 @@ app.include_router(shops.router, prefix="/shops", tags=["Shops"])
 app.include_router(products.router, prefix="/products", tags=["Products"])
 app.include_router(rfq.router, prefix="/rfq", tags=["RFQ"])
 app.include_router(quotes.router, prefix="/quotes", tags=["Quotes"])
-app.include_router(ai.router, prefix="/ai", tags=["AI Features"])
 app.include_router(negotiations.router, prefix="/negotiations", tags=["Negotiations"])
 app.include_router(contracts.router, prefix="/contracts", tags=["Contracts"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+app.include_router(ai.router, prefix="/ai", tags=["AI Features"])
+app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
+app.include_router(upload.router, prefix="/upload", tags=["Upload"])
+
+# Serve uploaded files
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+uploads_dir = Path("uploads")
+uploads_dir.mkdir(exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 @app.get("/", tags=["Health"])
 async def root():

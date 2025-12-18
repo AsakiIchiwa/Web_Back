@@ -30,6 +30,16 @@ class ContractStatus(str, enum.Enum):
     EXPIRED = "expired"
     TERMINATED = "terminated"
 
+class NotificationType(str, enum.Enum):
+    RFQ_RECEIVED = "rfq_received"           # Supplier nhận RFQ mới
+    QUOTE_RECEIVED = "quote_received"       # Shop nhận báo giá
+    QUOTE_ACCEPTED = "quote_accepted"       # Supplier: báo giá được chấp nhận
+    QUOTE_REJECTED = "quote_rejected"       # Supplier: báo giá bị từ chối
+    CONTRACT_CREATED = "contract_created"   # Cả 2: hợp đồng mới
+    PRODUCT_APPROVED = "product_approved"   # Supplier: sản phẩm được duyệt
+    PRODUCT_REJECTED = "product_rejected"   # Supplier: sản phẩm bị từ chối
+    SYSTEM = "system"                       # Thông báo hệ thống
+
 # ==================== USERS ====================
 class User(Base):
     __tablename__ = "users"
@@ -53,6 +63,7 @@ class User(Base):
     # Relationships
     supplier = relationship("Supplier", back_populates="user", uselist=False)
     shop = relationship("Shop", back_populates="user", uselist=False)
+    notifications = relationship("Notification", back_populates="user")
 
 # ==================== SUPPLIER ====================
 class Supplier(Base):
@@ -178,3 +189,19 @@ class Contract(Base):
     supplier = relationship("Supplier", back_populates="contracts")
     shop = relationship("Shop", back_populates="contracts")
     product = relationship("Product", back_populates="contracts")
+
+# ==================== NOTIFICATIONS ====================
+class Notification(Base):
+    __tablename__ = "notifications"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    type = Column(SQLEnum(NotificationType), nullable=False)
+    title = Column(String(255), nullable=False)
+    message = Column(Text)
+    link = Column(String(500))  # Link to related page
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="notifications")

@@ -2,7 +2,7 @@ from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from datetime import datetime, date
 from decimal import Decimal
-from app.models import UserRole, ProductStatus, RFQStatus, QuoteStatus, ContractStatus
+from app.models import UserRole, ProductStatus, RFQStatus, QuoteStatus, ContractStatus, NotificationType
 
 # ==================== AUTH ====================
 class Token(BaseModel):
@@ -242,6 +242,23 @@ class PaginatedResponse(BaseModel):
     page: int
     size: int
     pages: int
+
+# ==================== NOTIFICATION ====================
+class NotificationResponse(BaseModel):
+    id: int
+    user_id: int
+    type: NotificationType
+    title: str
+    message: Optional[str] = None
+    link: Optional[str] = None
+    is_read: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class NotificationUpdate(BaseModel):
+    is_read: bool
 
 # Update forward refs
 UserWithProfile.model_rebuild()
