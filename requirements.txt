@@ -31,5 +31,4 @@ reportlab==4.0.8
 
 # File handling
 aiofiles==23.2.1
-python-cloudflare==2.5.0
 
