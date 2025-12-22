@@ -270,7 +270,7 @@ async def send_message(
         await create_notification(
             db=db,
             user_id=receiver_user_id,
-            type=NotificationType.NEW_MESSAGE,
+            notification_type="new_message",  # <-- SỬA TỪ type= THÀNH notification_type=
             title="Tin nhắn mới",
             message=f"{sender_name}: {data.message[:50]}{'...' if len(data.message) > 50 else ''}",
             link=f"/chat/{room_id}"

@@ -401,7 +401,7 @@ async def get_order(
 @router.patch("/{order_id}/status")
 async def update_order_status(
     order_id: int,
-    status: OrderStatus,
+    new_status: str = Query(...),  # Đổi từ OrderStatus sang str
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -411,6 +411,12 @@ async def update_order_status(
     
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Convert string to enum
+    try:
+        status = OrderStatus(new_status)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {new_status}")
     
     order.status = status
     order.updated_at = datetime.utcnow()
