@@ -2,7 +2,7 @@ from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from datetime import datetime, date
 from decimal import Decimal
-from app.models import UserRole, ProductStatus, RFQStatus, QuoteStatus, ContractStatus, NotificationType
+from app.models import UserRole, ProductStatus, RFQStatus, QuoteStatus, ContractStatus, NotificationType, OrderStatus, PaymentMethod
 
 # ==================== AUTH ====================
 class Token(BaseModel):
@@ -259,7 +259,86 @@ class NotificationResponse(BaseModel):
 
 class NotificationUpdate(BaseModel):
     is_read: bool
+# ==================== ORDER ====================
+class OrderCreate(BaseModel):
+    contract_id: int
+    quantity: int = Field(gt=0)
+    shipping_address: str
+    note: Optional[str] = None
+    payment_method: Optional[PaymentMethod] = PaymentMethod.BANK_TRANSFER
 
+
+class OrderUpdate(BaseModel):
+    status: Optional[OrderStatus] = None
+    shipping_address: Optional[str] = None
+    note: Optional[str] = None
+
+
+class OrderResponse(BaseModel):
+    id: int
+    order_code: str
+    contract_id: int
+    supplier_id: int
+    shop_id: int
+    quantity: int
+    unit_price: Decimal
+    total_amount: Decimal
+    shipping_address: Optional[str] = None
+    note: Optional[str] = None
+    status: OrderStatus
+    payment_method: PaymentMethod
+    payment_proof: Optional[str] = None
+    paid_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class OrderTrackingResponse(BaseModel):
+    id: int
+    order_id: int
+    status: OrderStatus
+    note: Optional[str] = None
+    updated_by: Optional[int] = None
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class OrderWithDetails(OrderResponse):
+    contract: Optional[ContractResponse] = None
+    supplier: Optional[SupplierResponse] = None
+    shop: Optional[ShopResponse] = None
+    tracking_history: Optional[List[OrderTrackingResponse]] = []
+    
+    class Config:
+        from_attributes = True
+
+
+# ==================== PAYMENT INFO ====================
+class PaymentInfoCreate(BaseModel):
+    bank_name: Optional[str] = None
+    bank_account: Optional[str] = None
+    account_holder: Optional[str] = None
+    qr_code_url: Optional[str] = None
+
+
+class PaymentInfoResponse(BaseModel):
+    id: Optional[int] = None
+    supplier_id: Optional[int] = None
+    bank_name: Optional[str] = None
+    bank_account: Optional[str] = None
+    account_holder: Optional[str] = None
+    qr_code_url: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    class Config:
+        from_attributes = True
+        
 # Update forward refs
 UserWithProfile.model_rebuild()
 RFQWithDetails.model_rebuild()
+OrderWithDetails.model_rebuild()
