@@ -259,6 +259,39 @@ class NotificationResponse(BaseModel):
 
 class NotificationUpdate(BaseModel):
     is_read: bool
+    
+# ==================== CHAT ====================
+class ChatMessageCreate(BaseModel):
+    content: str
+
+
+class ChatMessageResponse(BaseModel):
+    id: int
+    room_id: int
+    sender_id: int
+    content: str
+    is_read: bool = False
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class ChatRoomResponse(BaseModel):
+    id: int
+    supplier_id: int
+    shop_id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    last_message: Optional[ChatMessageResponse] = None
+    unread_count: Optional[int] = 0
+    partner: Optional[dict] = None
+    messages: Optional[List[ChatMessageResponse]] = []
+    
+    class Config:
+        from_attributes = True
+
+
 # ==================== ORDER ====================
 class OrderCreate(BaseModel):
     contract_id: int
@@ -309,9 +342,9 @@ class OrderTrackingResponse(BaseModel):
 
 
 class OrderWithDetails(OrderResponse):
-    contract: Optional[ContractResponse] = None
-    supplier: Optional[SupplierResponse] = None
-    shop: Optional[ShopResponse] = None
+    contract: Optional[dict] = None
+    supplier: Optional[dict] = None
+    shop: Optional[dict] = None
     tracking_history: Optional[List[OrderTrackingResponse]] = []
     
     class Config:
@@ -335,6 +368,7 @@ class PaymentInfoResponse(BaseModel):
     qr_code_url: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    
     class Config:
         from_attributes = True
         
