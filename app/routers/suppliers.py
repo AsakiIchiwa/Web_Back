@@ -262,7 +262,7 @@ async def respond_to_rfq(
             await create_notification(
                 db=db,
                 user_id=shop.user_id,
-                type=NotificationType.QUOTE_RECEIVED,
+                notification_type="quote_received",  # <-- SỬA TỪ type= THÀNH notification_type=
                 title="Báo giá mới",
                 message=f"{supplier.company_name} đã gửi báo giá cho {product_name}",
                 link="/shop/rfq"

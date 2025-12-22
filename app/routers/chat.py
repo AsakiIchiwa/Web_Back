@@ -136,34 +136,50 @@ async def get_chat_room(
         "unread_count": 0
     }
 
-@router.post("/rooms/with/{partner_id}", response_model=ChatRoomResponse)
+@router.post("/rooms/with/{partner_user_id}", response_model=ChatRoomResponse)
 async def create_or_get_chat_room(
-    partner_id: int,
+    partner_user_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create or get chat room with a partner (supplier_id for shop, shop_id for supplier)"""
+    """Create or get chat room with a partner (by user_id)"""
     if current_user.role.value == "supplier":
+        # Get current supplier
         supplier_result = await db.execute(
             select(Supplier).where(Supplier.user_id == current_user.id)
         )
         supplier = supplier_result.scalar_one_or_none()
         if not supplier:
-            raise HTTPException(status_code=404, detail="Supplier not found")
+            raise HTTPException(status_code=404, detail="Supplier profile not found")
         
-        # partner_id is shop_id
-        room = await get_or_create_chat_room(db, supplier.id, partner_id)
-        
-    elif current_user.role.value == "shop":
+        # Get shop by user_id (partner_user_id là user_id của shop)
         shop_result = await db.execute(
-            select(Shop).where(Shop.user_id == current_user.id)
+            select(Shop).where(Shop.user_id == partner_user_id)
         )
         shop = shop_result.scalar_one_or_none()
         if not shop:
             raise HTTPException(status_code=404, detail="Shop not found")
         
-        # partner_id is supplier_id
-        room = await get_or_create_chat_room(db, partner_id, shop.id)
+        room = await get_or_create_chat_room(db, supplier.id, shop.id)
+        
+    elif current_user.role.value == "shop":
+        # Get current shop
+        shop_result = await db.execute(
+            select(Shop).where(Shop.user_id == current_user.id)
+        )
+        shop = shop_result.scalar_one_or_none()
+        if not shop:
+            raise HTTPException(status_code=404, detail="Shop profile not found")
+        
+        # Get supplier by user_id (partner_user_id là user_id của supplier)
+        supplier_result = await db.execute(
+            select(Supplier).where(Supplier.user_id == partner_user_id)
+        )
+        supplier = supplier_result.scalar_one_or_none()
+        if not supplier:
+            raise HTTPException(status_code=404, detail="Supplier not found")
+        
+        room = await get_or_create_chat_room(db, supplier.id, shop.id)
     else:
         raise HTTPException(status_code=403, detail="Only suppliers and shops can chat")
     
