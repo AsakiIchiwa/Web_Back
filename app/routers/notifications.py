@@ -1,307 +1,191 @@
-import { useState, useEffect, useRef } from 'react';
-import { Bell, Package, FileText, MessageSquare, CheckCircle, Loader2, ShoppingCart } from 'lucide-react';
-import { useAuthStore } from '../store/authStore';
-import { api } from '../api';
-import { useNavigate } from 'react-router-dom';
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update, func, and_
+from datetime import datetime
+from typing import Optional, List
+from enum import Enum
 
-interface Notification {
-  id: number;
-  type: string;
-  title: string;
-  message: string;
-  is_read: boolean;
-  created_at: string;
-  link?: string;
-}
+from app.database import get_db
+from app.models import User, Notification, NotificationType
+from app.auth import get_current_user
 
-const notificationIcons: Record<string, any> = {
-  rfq_received: FileText,
-  rfq_created: FileText,
-  quote_received: Package,
-  quote_created: Package,
-  contract_created: CheckCircle,
-  contract_signed: CheckCircle,
-  order_created: ShoppingCart,
-  order_status: ShoppingCart,
-  new_message: MessageSquare,
-  system: Bell,
-  default: Bell,
-};
+router = APIRouter()
 
-const notificationColors: Record<string, string> = {
-  rfq_received: 'bg-purple-100 text-purple-600',
-  rfq_created: 'bg-blue-100 text-blue-600',
-  quote_received: 'bg-green-100 text-green-600',
-  quote_created: 'bg-teal-100 text-teal-600',
-  contract_created: 'bg-emerald-100 text-emerald-600',
-  contract_signed: 'bg-green-100 text-green-600',
-  order_created: 'bg-orange-100 text-orange-600',
-  order_status: 'bg-yellow-100 text-yellow-600',
-  new_message: 'bg-indigo-100 text-indigo-600',
-  system: 'bg-gray-100 text-gray-600',
-  default: 'bg-gray-100 text-gray-600',
-};
 
-export default function NotificationDropdown() {
-  const navigate = useNavigate();
-  const { user } = useAuthStore();
-  const [isOpen, setIsOpen] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+# ==================== GET NOTIFICATIONS ====================
 
-  useEffect(() => {
-    if (user) {
-      fetchNotifications();
-      fetchUnreadCount();
-      const interval = setInterval(() => {
-        fetchUnreadCount();
-      }, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const fetchNotifications = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get('/notifications/', { params: { limit: 10 } });
-      const data = response.data || [];
-      setNotifications(data);
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchUnreadCount = async () => {
-    try {
-      const response = await api.get('/notifications/unread-count');
-      setUnreadCount(response.data.count || 0);
-    } catch (error) {
-      console.error('Error fetching unread count:', error);
-    }
-  };
-
-  const markAsRead = async (id: number) => {
-    try {
-      // Sử dụng PATCH với body theo API backend
-      await api.patch(`/notifications/${id}`, { is_read: true });
-      setNotifications(notifications.map(n => 
-        n.id === id ? { ...n, is_read: true } : n
-      ));
-      setUnreadCount(prev => Math.max(0, prev - 1));
-    } catch (error) {
-      console.error('Error marking as read:', error);
-    }
-  };
-
-  const markAllAsRead = async () => {
-    try {
-      // Sử dụng POST theo API backend
-      await api.post('/notifications/mark-all-read');
-      setNotifications(notifications.map(n => ({ ...n, is_read: true })));
-      setUnreadCount(0);
-    } catch (error) {
-      console.error('Error marking all as read:', error);
-    }
-  };
-
-  const handleNotificationClick = (notification: Notification) => {
-    if (!notification.is_read) {
-      markAsRead(notification.id);
-    }
-    setIsOpen(false);
-
-    // Nếu có link thì navigate đến link đó
-    if (notification.link) {
-      navigate(notification.link);
-      return;
-    }
-
-    // Nếu không có link thì navigate theo type
-    const role = user?.role;
-    const basePath = role === 'supplier' ? '/supplier' : role === 'shop' ? '/shop' : '/admin';
+@router.get("/")
+async def get_notifications(
+    limit: int = Query(50, ge=1, le=100),
+    skip: int = Query(0, ge=0),
+    is_read: Optional[bool] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all notifications for current user"""
+    query = select(Notification).where(Notification.user_id == current_user.id)
     
-    switch (notification.type) {
-      case 'rfq_received':
-      case 'rfq_created':
-        navigate(`${basePath}/rfq`);
-        break;
-      case 'quote_received':
-      case 'quote_created':
-        navigate(role === 'supplier' ? '/supplier/rfq' : '/shop/rfq');
-        break;
-      case 'contract_created':
-      case 'contract_signed':
-        navigate(`${basePath}/contracts`);
-        break;
-      case 'order_created':
-      case 'order_status':
-        navigate(`${basePath}/orders`);
-        break;
-      case 'new_message':
-        navigate(`${basePath}/chat`);
-        break;
-      default:
-        break;
-    }
-  };
+    if is_read is not None:
+        query = query.where(Notification.is_read == is_read)
+    
+    query = query.order_by(Notification.created_at.desc()).offset(skip).limit(limit)
+    
+    result = await db.execute(query)
+    notifications = result.scalars().all()
+    
+    return [
+        {
+            "id": n.id,
+            "type": n.type.value if isinstance(n.type, Enum) else (n.type or "system"),
+            "title": n.title,
+            "message": n.message,
+            "is_read": n.is_read,
+            "created_at": n.created_at.isoformat() if n.created_at else None,
+            "link": n.link if hasattr(n, 'link') else None,
+            "data": n.data if hasattr(n, 'data') else None
+        }
+        for n in notifications
+    ]
 
-  const formatTime = (dateString: string) => {
-    try {
-      const date = new Date(dateString);
-      const now = new Date();
-      const diffMs = now.getTime() - date.getTime();
-      const diffMins = Math.floor(diffMs / 60000);
-      const diffHours = Math.floor(diffMs / 3600000);
-      const diffDays = Math.floor(diffMs / 86400000);
 
-      if (diffMins < 1) return 'Vừa xong';
-      if (diffMins < 60) return `${diffMins} phút trước`;
-      if (diffHours < 24) return `${diffHours} giờ trước`;
-      if (diffDays < 7) return `${diffDays} ngày trước`;
-      return date.toLocaleDateString('vi-VN');
-    } catch {
-      return '';
-    }
-  };
+@router.get("/unread-count")
+async def get_unread_count(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get unread notifications count"""
+    result = await db.execute(
+        select(func.count(Notification.id))
+        .where(Notification.user_id == current_user.id)
+        .where(Notification.is_read == False)
+    )
+    count = result.scalar() or 0
+    return {"count": count}
 
-  const getIcon = (type: string) => {
-    return notificationIcons[type] || notificationIcons.default;
-  };
 
-  const getColor = (type: string) => {
-    return notificationColors[type] || notificationColors.default;
-  };
+# ==================== MARK AS READ ====================
 
-  return (
-    <div className="relative" ref={dropdownRef}>
-      {/* Bell Button */}
-      <button
-        onClick={() => {
-          setIsOpen(!isOpen);
-          if (!isOpen) fetchNotifications();
-        }}
-        className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors"
-      >
-        <Bell className="w-5 h-5 text-gray-600" />
-        {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center animate-pulse">
-            {unreadCount > 9 ? '9+' : unreadCount}
-          </span>
-        )}
-      </button>
+@router.patch("/{notification_id}")
+async def update_notification(
+    notification_id: int,
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update notification (mark as read)"""
+    result = await db.execute(
+        select(Notification)
+        .where(Notification.id == notification_id)
+        .where(Notification.user_id == current_user.id)
+    )
+    notification = result.scalar_one_or_none()
+    
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    
+    if "is_read" in data:
+        notification.is_read = data["is_read"]
+    
+    await db.commit()
+    
+    return {"message": "Notification updated", "id": notification_id}
 
-      {/* Dropdown */}
-      {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-2xl border border-gray-200 z-50 overflow-hidden">
-          {/* Header */}
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-primary-50 to-white">
-            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-              <Bell className="w-4 h-4 text-primary-600" />
-              Thông báo
-              {unreadCount > 0 && (
-                <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">
-                  {unreadCount}
-                </span>
-              )}
-            </h3>
-            {unreadCount > 0 && (
-              <button
-                onClick={markAllAsRead}
-                className="text-sm text-primary-600 hover:text-primary-700 font-medium hover:underline"
-              >
-                Đọc tất cả
-              </button>
-            )}
-          </div>
 
-          {/* Notification List */}
-          <div className="max-h-[400px] overflow-y-auto">
-            {loading ? (
-              <div className="py-8 text-center">
-                <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary-600" />
-                <p className="text-sm text-gray-500 mt-2">Đang tải...</p>
-              </div>
-            ) : notifications.length === 0 ? (
-              <div className="py-12 text-center">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <Bell className="w-8 h-8 text-gray-300" />
-                </div>
-                <p className="text-gray-500 font-medium">Không có thông báo</p>
-                <p className="text-sm text-gray-400 mt-1">Các thông báo mới sẽ hiển thị ở đây</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-50">
-                {notifications.map((notification) => {
-                  const Icon = getIcon(notification.type);
-                  return (
-                    <div
-                      key={notification.id}
-                      onClick={() => handleNotificationClick(notification)}
-                      className={`px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors ${
-                        !notification.is_read ? 'bg-blue-50/50' : ''
-                      }`}
-                    >
-                      <div className="flex gap-3">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${getColor(notification.type)}`}>
-                          <Icon className="w-5 h-5" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2">
-                            <p className={`text-sm leading-tight ${!notification.is_read ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
-                              {notification.title}
-                            </p>
-                            {!notification.is_read && (
-                              <span className="w-2 h-2 bg-primary-500 rounded-full flex-shrink-0 mt-1.5"></span>
-                            )}
-                          </div>
-                          {notification.message && (
-                            <p className="text-sm text-gray-500 line-clamp-2 mt-0.5">
-                              {notification.message}
-                            </p>
-                          )}
-                          <p className="text-xs text-gray-400 mt-1">
-                            {formatTime(notification.created_at)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+@router.post("/mark-all-read")
+async def mark_all_as_read(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Mark all notifications as read"""
+    await db.execute(
+        update(Notification)
+        .where(Notification.user_id == current_user.id)
+        .where(Notification.is_read == False)
+        .values(is_read=True)
+    )
+    await db.commit()
+    
+    return {"message": "All notifications marked as read"}
 
-          {/* Footer */}
-          {notifications.length > 0 && (
-            <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
-              <button
-                onClick={() => {
-                  setIsOpen(false);
-                  const basePath = user?.role === 'supplier' ? '/supplier' : user?.role === 'shop' ? '/shop' : '/admin';
-                  navigate(`${basePath}/notifications`);
-                }}
-                className="w-full text-center text-sm text-primary-600 hover:text-primary-700 font-medium"
-              >
-                Xem tất cả thông báo →
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
+
+# ==================== DELETE ====================
+
+@router.delete("/{notification_id}")
+async def delete_notification(
+    notification_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a notification"""
+    result = await db.execute(
+        select(Notification)
+        .where(Notification.id == notification_id)
+        .where(Notification.user_id == current_user.id)
+    )
+    notification = result.scalar_one_or_none()
+    
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    
+    await db.delete(notification)
+    await db.commit()
+    
+    return {"message": "Notification deleted"}
+
+
+# ==================== HELPER FUNCTION ====================
+
+async def create_notification(
+    db: AsyncSession,
+    user_id: int,
+    notification_type: str,
+    title: str,
+    message: str = "",
+    link: str = None,
+    data: dict = None
+):
+    """
+    Helper function to create a new notification.
+    Call this from other routers when events happen.
+    
+    Example:
+        await create_notification(
+            db=db,
+            user_id=supplier.user_id,
+            notification_type="rfq_received",
+            title="New RFQ received",
+            message="Shop ABC has sent you a new RFQ",
+            link="/supplier/rfq"
+        )
+    """
+    try:
+        # Convert string to enum if needed
+        try:
+            ntype = NotificationType(notification_type)
+        except (ValueError, KeyError):
+            ntype = notification_type  # Use as string if not in enum
+        
+        notification = Notification(
+            user_id=user_id,
+            type=ntype,
+            title=title,
+            message=message,
+            is_read=False,
+            created_at=datetime.utcnow()
+        )
+        
+        # Add optional fields if model supports them
+        if hasattr(notification, 'link') and link:
+            notification.link = link
+        if hasattr(notification, 'data') and data:
+            notification.data = data
+        
+        db.add(notification)
+        await db.commit()
+        await db.refresh(notification)
+        
+        return notification
+    except Exception as e:
+        print(f"Error creating notification: {e}")
+        await db.rollback()
+        return None
