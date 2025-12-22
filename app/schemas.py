@@ -261,17 +261,19 @@ class NotificationUpdate(BaseModel):
     is_read: bool
     
 # ==================== CHAT ====================
+# ==================== CHAT ====================
 class ChatMessageCreate(BaseModel):
-    content: str
+    message: str  # <-- Đổi từ content thành message
 
 
 class ChatMessageResponse(BaseModel):
     id: int
-    room_id: int
+    chat_room_id: int  # <-- Đổi từ room_id thành chat_room_id (khớp với model)
     sender_id: int
-    content: str
+    message: str  # <-- Đổi từ content thành message
     is_read: bool = False
     created_at: datetime
+    sender: Optional[UserResponse] = None  # Thêm sender info
     
     class Config:
         from_attributes = True
@@ -283,9 +285,10 @@ class ChatRoomResponse(BaseModel):
     shop_id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
+    supplier: Optional[SupplierResponse] = None
+    shop: Optional[ShopResponse] = None
     last_message: Optional[ChatMessageResponse] = None
     unread_count: Optional[int] = 0
-    partner: Optional[dict] = None
     messages: Optional[List[ChatMessageResponse]] = []
     
     class Config:

@@ -1,5 +1,4 @@
-import uuid
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query  # <-- Thêm Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -11,9 +10,7 @@ from app.models import (
     User, Supplier, Shop, Contract, ContractStatus, 
     Order, OrderStatus, PaymentMethod, SupplierPaymentInfo
 )
-from app.schemas import (
-    OrderCreate, OrderResponse, PaymentInfoCreate, PaymentInfoResponse
-)
+from app.schemas import OrderCreate, OrderResponse, OrderWithDetails, PaymentInfoCreate, PaymentInfoResponse
 from app.auth import get_current_user, get_supplier_user, get_shop_user
 
 router = APIRouter()
@@ -401,22 +398,40 @@ async def get_order(
 @router.patch("/{order_id}/status")
 async def update_order_status(
     order_id: int,
-    new_status: str = Query(...),  # Đổi từ OrderStatus sang str
+    new_status: str = Query(...),  # <-- Nhận từ query param
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Update order status"""
-    result = await db.execute(select(Order).where(Order.id == order_id))
+    result = await db.execute(
+        select(Order).where(Order.id == order_id)
+    )
     order = result.scalar_one_or_none()
     
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
+    # Check permission
+    if current_user.role.value == "supplier":
+        supplier_result = await db.execute(
+            select(Supplier).where(Supplier.user_id == current_user.id)
+        )
+        supplier = supplier_result.scalar_one_or_none()
+        if not supplier or order.supplier_id != supplier.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    elif current_user.role.value == "shop":
+        shop_result = await db.execute(
+            select(Shop).where(Shop.user_id == current_user.id)
+        )
+        shop = shop_result.scalar_one_or_none()
+        if not shop or order.shop_id != shop.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    
     # Convert string to enum
     try:
         status = OrderStatus(new_status)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid status: {new_status}")
+        raise HTTPException(status_code=400, detail=f"Invalid status: {new_status}. Valid: pending, confirmed, processing, shipped, delivered, cancelled, paid")
     
     order.status = status
     order.updated_at = datetime.utcnow()
