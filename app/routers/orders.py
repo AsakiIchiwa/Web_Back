@@ -1,11 +1,10 @@
-import uuid 
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from typing import List
 from datetime import datetime
-import aiofiles
 from pathlib import Path
 
 from app.database import get_db
@@ -15,16 +14,16 @@ from app.models import (
     Notification, NotificationType, SupplierPaymentInfo
 )
 from app.schemas import (
-    OrderCreate, OrderResponse, OrderWithDetails, OrderUpdate,
+    OrderCreate, OrderResponse, OrderUpdate,
     OrderTrackingResponse, PaymentInfoCreate, PaymentInfoResponse
 )
 from app.auth import get_current_user, get_supplier_user, get_shop_user
-from app.routers.notifications import create_notification
 
 router = APIRouter()
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
+
 
 def generate_order_code():
     """Generate unique order code: ORD-YYYYMMDD-XXXX"""
@@ -32,42 +31,36 @@ def generate_order_code():
     random_part = uuid.uuid4().hex[:4].upper()
     return f"ORD-{now.strftime('%Y%m%d')}-{random_part}"
 
+
+# ==================== ORDER ENDPOINTS ====================
+
 @router.post("/", response_model=OrderResponse)
 async def create_order(
     data: OrderCreate,
     current_user: User = Depends(get_shop_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create order from contract (Shop only)"""
-    # Get shop
-    shop_result = await db.execute(
-        select(Shop).where(Shop.user_id == current_user.id)
-    )
-    shop = shop_result.scalar_one_or_none()
+    """Create new order from contract (Shop only)"""
+    result = await db.execute(select(Shop).where(Shop.user_id == current_user.id))
+    shop = result.scalar_one_or_none()
     if not shop:
         raise HTTPException(status_code=404, detail="Shop not found")
     
-    # Get contract and verify
-    contract_result = await db.execute(
+    result = await db.execute(
         select(Contract)
-        .options(selectinload(Contract.product), selectinload(Contract.supplier))
+        .options(selectinload(Contract.product))
         .where(Contract.id == data.contract_id)
     )
-    contract = contract_result.scalar_one_or_none()
+    contract = result.scalar_one_or_none()
     if not contract:
         raise HTTPException(status_code=404, detail="Contract not found")
     
     if contract.shop_id != shop.id:
-        raise HTTPException(status_code=403, detail="Không có quyền tạo đơn từ hợp đồng này")
+        raise HTTPException(status_code=403, detail="Contract does not belong to you")
     
     if contract.status != ContractStatus.ACTIVE:
-        raise HTTPException(status_code=400, detail="Hợp đồng không còn hiệu lực")
+        raise HTTPException(status_code=400, detail="Contract is not active")
     
-    # Verify quantity
-    if data.quantity > contract.quantity:
-        raise HTTPException(status_code=400, detail=f"Số lượng không được vượt quá {contract.quantity}")
-    
-    # Create order
     order = Order(
         order_code=generate_order_code(),
         contract_id=contract.id,
@@ -78,174 +71,182 @@ async def create_order(
         total_amount=contract.agreed_price * data.quantity,
         shipping_address=data.shipping_address,
         note=data.note,
-        payment_method=data.payment_method,
-        status=OrderStatus.PENDING
-    )
-    db.add(order)
-    await db.flush()
-    
-    # Create initial tracking
-    tracking = OrderTracking(
-        order_id=order.id,
         status=OrderStatus.PENDING,
-        note="Đơn hàng được tạo",
-        updated_by=current_user.id
-    )
-    db.add(tracking)
-    
-    # Notify supplier
-    await create_notification(
-        db=db,
-        user_id=contract.supplier.user_id,
-        type=NotificationType.ORDER_CREATED,
-        title="Đơn hàng mới",
-        message=f"Đơn hàng {order.order_code} từ {shop.shop_name}",
-        link="/supplier/orders"
+        payment_method=data.payment_method or PaymentMethod.BANK_TRANSFER,
     )
     
+    db.add(order)
     await db.commit()
     await db.refresh(order)
+    
     return order
 
-@router.get("/", response_model=List[OrderWithDetails])
+
+@router.get("/")
 async def get_orders(
-    status: OrderStatus = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get orders for current user"""
+    """Get all orders for current user"""
     query = select(Order).options(
         selectinload(Order.contract).selectinload(Contract.product),
-        selectinload(Order.supplier).selectinload(Supplier.user),
-        selectinload(Order.shop).selectinload(Shop.user),
-        selectinload(Order.tracking_history).selectinload(OrderTracking.user)
+        selectinload(Order.supplier),
+        selectinload(Order.shop)
     )
     
     if current_user.role.value == "supplier":
-        supplier_result = await db.execute(
-            select(Supplier).where(Supplier.user_id == current_user.id)
-        )
-        supplier = supplier_result.scalar_one_or_none()
+        result = await db.execute(select(Supplier).where(Supplier.user_id == current_user.id))
+        supplier = result.scalar_one_or_none()
         if supplier:
             query = query.where(Order.supplier_id == supplier.id)
     elif current_user.role.value == "shop":
-        shop_result = await db.execute(
-            select(Shop).where(Shop.user_id == current_user.id)
-        )
-        shop = shop_result.scalar_one_or_none()
+        result = await db.execute(select(Shop).where(Shop.user_id == current_user.id))
+        shop = result.scalar_one_or_none()
         if shop:
             query = query.where(Order.shop_id == shop.id)
     
-    if status:
-        query = query.where(Order.status == status)
-    
     query = query.order_by(Order.created_at.desc())
     result = await db.execute(query)
-    return result.scalars().all()
+    orders = result.scalars().all()
+    
+    # Convert to dict manually
+    orders_data = []
+    for order in orders:
+        order_dict = {
+            "id": order.id,
+            "order_code": order.order_code,
+            "contract_id": order.contract_id,
+            "supplier_id": order.supplier_id,
+            "shop_id": order.shop_id,
+            "quantity": order.quantity,
+            "unit_price": float(order.unit_price) if order.unit_price else 0,
+            "total_amount": float(order.total_amount) if order.total_amount else 0,
+            "shipping_address": order.shipping_address,
+            "note": order.note,
+            "status": order.status.value if order.status else "pending",
+            "payment_method": order.payment_method.value if order.payment_method else "bank_transfer",
+            "payment_proof": order.payment_proof,
+            "paid_at": order.paid_at.isoformat() if order.paid_at else None,
+            "created_at": order.created_at.isoformat() if order.created_at else None,
+            "updated_at": order.updated_at.isoformat() if order.updated_at else None,
+            "contract": {
+                "id": order.contract.id,
+                "contract_code": order.contract.contract_code if hasattr(order.contract, 'contract_code') else None,
+                "agreed_price": float(order.contract.agreed_price) if order.contract.agreed_price else 0,
+                "status": order.contract.status.value if order.contract.status else None,
+                "product": {
+                    "id": order.contract.product.id,
+                    "name": order.contract.product.name,
+                    "image_url": order.contract.product.image_url,
+                } if order.contract.product else None
+            } if order.contract else None,
+            "supplier": {
+                "id": order.supplier.id,
+                "company_name": order.supplier.company_name,
+                "phone": order.supplier.phone,
+                "address": order.supplier.address,
+            } if order.supplier else None,
+            "shop": {
+                "id": order.shop.id,
+                "shop_name": order.shop.shop_name,
+                "phone": order.shop.phone,
+                "address": order.shop.address,
+            } if order.shop else None,
+        }
+        orders_data.append(order_dict)
+    
+    return orders_data
 
-@router.get("/{order_id}", response_model=OrderWithDetails)
+
+@router.get("/{order_id}")
 async def get_order(
     order_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get order details"""
+    """Get order by ID"""
     result = await db.execute(
         select(Order)
         .options(
             selectinload(Order.contract).selectinload(Contract.product),
-            selectinload(Order.supplier).selectinload(Supplier.user),
-            selectinload(Order.shop).selectinload(Shop.user),
-            selectinload(Order.tracking_history).selectinload(OrderTracking.user)
+            selectinload(Order.supplier),
+            selectinload(Order.shop)
         )
         .where(Order.id == order_id)
     )
     order = result.scalar_one_or_none()
+    
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
-    # Verify access
-    if current_user.role.value == "supplier":
-        supplier_result = await db.execute(
-            select(Supplier).where(Supplier.user_id == current_user.id)
-        )
-        supplier = supplier_result.scalar_one_or_none()
-        if not supplier or order.supplier_id != supplier.id:
-            raise HTTPException(status_code=403, detail="Access denied")
-    elif current_user.role.value == "shop":
-        shop_result = await db.execute(
-            select(Shop).where(Shop.user_id == current_user.id)
-        )
-        shop = shop_result.scalar_one_or_none()
-        if not shop or order.shop_id != shop.id:
-            raise HTTPException(status_code=403, detail="Access denied")
-    
-    return order
+    return {
+        "id": order.id,
+        "order_code": order.order_code,
+        "contract_id": order.contract_id,
+        "supplier_id": order.supplier_id,
+        "shop_id": order.shop_id,
+        "quantity": order.quantity,
+        "unit_price": float(order.unit_price) if order.unit_price else 0,
+        "total_amount": float(order.total_amount) if order.total_amount else 0,
+        "shipping_address": order.shipping_address,
+        "note": order.note,
+        "status": order.status.value if order.status else "pending",
+        "payment_method": order.payment_method.value if order.payment_method else "bank_transfer",
+        "payment_proof": order.payment_proof,
+        "paid_at": order.paid_at.isoformat() if order.paid_at else None,
+        "created_at": order.created_at.isoformat() if order.created_at else None,
+        "updated_at": order.updated_at.isoformat() if order.updated_at else None,
+        "contract": {
+            "id": order.contract.id,
+            "contract_code": order.contract.contract_code if hasattr(order.contract, 'contract_code') else None,
+            "agreed_price": float(order.contract.agreed_price) if order.contract.agreed_price else 0,
+            "status": order.contract.status.value if order.contract.status else None,
+            "product": {
+                "id": order.contract.product.id,
+                "name": order.contract.product.name,
+                "image_url": order.contract.product.image_url,
+            } if order.contract.product else None
+        } if order.contract else None,
+        "supplier": {
+            "id": order.supplier.id,
+            "company_name": order.supplier.company_name,
+            "phone": order.supplier.phone,
+            "address": order.supplier.address,
+        } if order.supplier else None,
+        "shop": {
+            "id": order.shop.id,
+            "shop_name": order.shop.shop_name,
+            "phone": order.shop.phone,
+            "address": order.shop.address,
+        } if order.shop else None,
+    }
+
 
 @router.patch("/{order_id}/status", response_model=OrderResponse)
 async def update_order_status(
     order_id: int,
-    new_status: OrderStatus,
-    note: str = None,
-    current_user: User = Depends(get_supplier_user),
+    status: OrderStatus,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Update order status (Supplier only)"""
-    # Get supplier
-    supplier_result = await db.execute(
-        select(Supplier).where(Supplier.user_id == current_user.id)
-    )
-    supplier = supplier_result.scalar_one_or_none()
-    if not supplier:
-        raise HTTPException(status_code=404, detail="Supplier not found")
-    
-    # Get order
-    result = await db.execute(
-        select(Order)
-        .options(selectinload(Order.shop))
-        .where(Order.id == order_id, Order.supplier_id == supplier.id)
-    )
+    """Update order status"""
+    result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
+    
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
-    # Update status
-    old_status = order.status
-    order.status = new_status
+    order.status = status
+    order.updated_at = datetime.utcnow()
     
-    # Create tracking record
-    status_notes = {
-        OrderStatus.CONFIRMED: "Đơn hàng đã được xác nhận",
-        OrderStatus.PAYMENT_PENDING: "Chờ thanh toán",
-        OrderStatus.PAID: "Đã nhận thanh toán",
-        OrderStatus.PROCESSING: "Đang xử lý đơn hàng",
-        OrderStatus.SHIPPING: "Đang vận chuyển",
-        OrderStatus.DELIVERED: "Đã giao hàng",
-        OrderStatus.COMPLETED: "Đơn hàng hoàn thành",
-        OrderStatus.CANCELLED: "Đơn hàng đã hủy"
-    }
-    
-    tracking = OrderTracking(
-        order_id=order.id,
-        status=new_status,
-        note=note or status_notes.get(new_status, "Cập nhật trạng thái"),
-        updated_by=current_user.id
-    )
-    db.add(tracking)
-    
-    # Notify shop
-    await create_notification(
-        db=db,
-        user_id=order.shop.user_id,
-        type=NotificationType.ORDER_UPDATED,
-        title="Cập nhật đơn hàng",
-        message=f"Đơn hàng {order.order_code}: {status_notes.get(new_status, new_status.value)}",
-        link=f"/shop/orders/{order.id}"
-    )
+    if status == OrderStatus.PAID:
+        order.paid_at = datetime.utcnow()
     
     await db.commit()
     await db.refresh(order)
+    
     return order
+
 
 @router.post("/{order_id}/payment-proof")
 async def upload_payment_proof(
@@ -255,124 +256,109 @@ async def upload_payment_proof(
     db: AsyncSession = Depends(get_db)
 ):
     """Upload payment proof (Shop only)"""
-    # Get shop
-    shop_result = await db.execute(
-        select(Shop).where(Shop.user_id == current_user.id)
-    )
-    shop = shop_result.scalar_one_or_none()
-    if not shop:
-        raise HTTPException(status_code=404, detail="Shop not found")
-    
-    # Get order
-    result = await db.execute(
-        select(Order)
-        .options(selectinload(Order.supplier))
-        .where(Order.id == order_id, Order.shop_id == shop.id)
-    )
+    result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
+    
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
-    # Validate file
-    ext = Path(file.filename).suffix.lower()
-    if ext not in {".jpg", ".jpeg", ".png", ".pdf"}:
-        raise HTTPException(status_code=400, detail="File type not allowed")
+    file_ext = file.filename.split(".")[-1]
+    filename = f"payment_{order.order_code}_{uuid.uuid4().hex[:8]}.{file_ext}"
+    file_path = UPLOAD_DIR / "payments" / filename
+    file_path.parent.mkdir(parents=True, exist_ok=True)
     
     content = await file.read()
-    if len(content) > 10 * 1024 * 1024:  # 10MB
-        raise HTTPException(status_code=400, detail="File too large")
+    with open(file_path, "wb") as f:
+        f.write(content)
     
-    # Save file
-    filename = f"payment_{order.id}_{uuid.uuid4().hex[:8]}{ext}"
-    filepath = UPLOAD_DIR / filename
-    async with aiofiles.open(filepath, 'wb') as f:
-        await f.write(content)
-    
-    # Update order
-    order.payment_proof = f"/uploads/{filename}"
+    order.payment_proof = f"/uploads/payments/{filename}"
     order.status = OrderStatus.PAID
-    order.paid_at = datetime.now()
-    
-    # Add tracking
-    tracking = OrderTracking(
-        order_id=order.id,
-        status=OrderStatus.PAID,
-        note="Đã tải lên chứng từ thanh toán",
-        updated_by=current_user.id
-    )
-    db.add(tracking)
-    
-    # Notify supplier
-    await create_notification(
-        db=db,
-        user_id=order.supplier.user_id,
-        type=NotificationType.PAYMENT_CONFIRMED,
-        title="Thanh toán mới",
-        message=f"Đơn hàng {order.order_code} đã được thanh toán",
-        link=f"/supplier/orders/{order.id}"
-    )
+    order.paid_at = datetime.utcnow()
     
     await db.commit()
+    await db.refresh(order)
     
     return {"message": "Payment proof uploaded", "url": order.payment_proof}
 
-# ==================== SUPPLIER PAYMENT INFO ====================
+
+# ==================== PAYMENT INFO ENDPOINTS ====================
+
 @router.get("/payment-info/me", response_model=PaymentInfoResponse)
 async def get_my_payment_info(
     current_user: User = Depends(get_supplier_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get supplier's payment info"""
-    supplier_result = await db.execute(
-        select(Supplier).where(Supplier.user_id == current_user.id)
-    )
-    supplier = supplier_result.scalar_one_or_none()
+    """Get current supplier's payment info"""
+    result = await db.execute(select(Supplier).where(Supplier.user_id == current_user.id))
+    supplier = result.scalar_one_or_none()
+    
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
     
     result = await db.execute(
         select(SupplierPaymentInfo).where(SupplierPaymentInfo.supplier_id == supplier.id)
     )
-    info = result.scalar_one_or_none()
+    payment_info = result.scalar_one_or_none()
     
-    if not info:
-        # Create empty record
-        info = SupplierPaymentInfo(supplier_id=supplier.id)
-        db.add(info)
-        await db.commit()
-        await db.refresh(info)
+    if not payment_info:
+        return PaymentInfoResponse(supplier_id=supplier.id)
     
-    return info
+    return payment_info
+
 
 @router.put("/payment-info/me", response_model=PaymentInfoResponse)
-async def update_my_payment_info(
+async def update_my_payment_info_put(
     data: PaymentInfoCreate,
     current_user: User = Depends(get_supplier_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Update supplier's payment info"""
-    supplier_result = await db.execute(
-        select(Supplier).where(Supplier.user_id == current_user.id)
-    )
-    supplier = supplier_result.scalar_one_or_none()
+    """Update current supplier's payment info"""
+    return await _update_payment_info(data, current_user, db)
+
+
+@router.patch("/payment-info/me", response_model=PaymentInfoResponse)
+async def update_my_payment_info_patch(
+    data: PaymentInfoCreate,
+    current_user: User = Depends(get_supplier_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Patch current supplier's payment info"""
+    return await _update_payment_info(data, current_user, db)
+
+
+async def _update_payment_info(data: PaymentInfoCreate, current_user: User, db: AsyncSession):
+    """Helper function to update payment info"""
+    result = await db.execute(select(Supplier).where(Supplier.user_id == current_user.id))
+    supplier = result.scalar_one_or_none()
+    
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
     
     result = await db.execute(
         select(SupplierPaymentInfo).where(SupplierPaymentInfo.supplier_id == supplier.id)
     )
-    info = result.scalar_one_or_none()
+    payment_info = result.scalar_one_or_none()
     
-    if not info:
-        info = SupplierPaymentInfo(supplier_id=supplier.id)
-        db.add(info)
+    if not payment_info:
+        payment_info = SupplierPaymentInfo(supplier_id=supplier.id)
+        db.add(payment_info)
     
-    for field, value in data.model_dump(exclude_unset=True).items():
-        setattr(info, field, value)
+    if data.bank_name is not None:
+        payment_info.bank_name = data.bank_name
+    if data.bank_account is not None:
+        payment_info.bank_account = data.bank_account
+    if data.account_holder is not None:
+        payment_info.account_holder = data.account_holder
+    if data.qr_code_url is not None:
+        payment_info.qr_code_url = data.qr_code_url
+    
+    payment_info.updated_at = datetime.utcnow()
     
     await db.commit()
-    await db.refresh(info)
-    return info
+    await db.refresh(payment_info)
+    
+    return payment_info
+
 
 @router.post("/payment-info/qr-code")
 async def upload_qr_code(
@@ -381,42 +367,38 @@ async def upload_qr_code(
     db: AsyncSession = Depends(get_db)
 ):
     """Upload QR code image"""
-    supplier_result = await db.execute(
-        select(Supplier).where(Supplier.user_id == current_user.id)
-    )
-    supplier = supplier_result.scalar_one_or_none()
+    result = await db.execute(select(Supplier).where(Supplier.user_id == current_user.id))
+    supplier = result.scalar_one_or_none()
+    
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
     
-    # Validate file
-    ext = Path(file.filename).suffix.lower()
-    if ext not in {".jpg", ".jpeg", ".png"}:
-        raise HTTPException(status_code=400, detail="File type not allowed")
+    file_ext = file.filename.split(".")[-1]
+    filename = f"qr_{supplier.id}_{uuid.uuid4().hex[:8]}.{file_ext}"
+    file_path = UPLOAD_DIR / "qrcodes" / filename
+    file_path.parent.mkdir(parents=True, exist_ok=True)
     
     content = await file.read()
-    if len(content) > 5 * 1024 * 1024:  # 5MB
-        raise HTTPException(status_code=400, detail="File too large")
+    with open(file_path, "wb") as f:
+        f.write(content)
     
-    # Save file
-    filename = f"qr_{supplier.id}_{uuid.uuid4().hex[:8]}{ext}"
-    filepath = UPLOAD_DIR / filename
-    async with aiofiles.open(filepath, 'wb') as f:
-        await f.write(content)
+    qr_url = f"/uploads/qrcodes/{filename}"
     
-    # Update payment info
     result = await db.execute(
         select(SupplierPaymentInfo).where(SupplierPaymentInfo.supplier_id == supplier.id)
     )
-    info = result.scalar_one_or_none()
+    payment_info = result.scalar_one_or_none()
     
-    if not info:
-        info = SupplierPaymentInfo(supplier_id=supplier.id)
-        db.add(info)
+    if not payment_info:
+        payment_info = SupplierPaymentInfo(supplier_id=supplier.id, qr_code_url=qr_url)
+        db.add(payment_info)
+    else:
+        payment_info.qr_code_url = qr_url
     
-    info.qr_code_url = f"/uploads/{filename}"
     await db.commit()
     
-    return {"message": "QR code uploaded", "url": info.qr_code_url}
+    return {"message": "QR code uploaded", "url": qr_url}
+
 
 @router.get("/payment-info/{supplier_id}", response_model=PaymentInfoResponse)
 async def get_supplier_payment_info(
@@ -424,13 +406,13 @@ async def get_supplier_payment_info(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get supplier's payment info (for shop to see when paying)"""
+    """Get supplier's payment info by ID"""
     result = await db.execute(
         select(SupplierPaymentInfo).where(SupplierPaymentInfo.supplier_id == supplier_id)
     )
-    info = result.scalar_one_or_none()
+    payment_info = result.scalar_one_or_none()
     
-    if not info:
-        raise HTTPException(status_code=404, detail="Payment info not found")
+    if not payment_info:
+        return PaymentInfoResponse(supplier_id=supplier_id)
     
-    return info
+    return payment_info
