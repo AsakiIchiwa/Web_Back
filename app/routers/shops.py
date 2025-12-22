@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 
@@ -17,6 +17,59 @@ from app.schemas import (
 from app.auth import get_current_user, get_shop_user
 
 router = APIRouter()
+
+
+# ==================== GET ALL SHOPS (for suppliers) ====================
+@router.get("/")
+async def get_all_shops(
+    search: Optional[str] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all shops (for suppliers to view and contact)"""
+    query = select(Shop).options(selectinload(Shop.user))
+    
+    if search:
+        query = query.join(User).where(
+            or_(
+                Shop.shop_name.ilike(f"%{search}%"),
+                Shop.address.ilike(f"%{search}%"),
+                User.email.ilike(f"%{search}%"),
+                User.full_name.ilike(f"%{search}%")
+            )
+        )
+    
+    # Get total count
+    count_query = select(func.count()).select_from(Shop)
+    count_result = await db.execute(count_query)
+    total = count_result.scalar() or 0
+    
+    # Get shops with pagination
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    shops = result.scalars().all()
+    
+    return {
+        "total": total,
+        "shops": [
+            {
+                "id": shop.id,
+                "shop_name": shop.shop_name,
+                "address": shop.address,
+                "phone": shop.phone,
+                "user_id": shop.user_id,
+                "user": {
+                    "id": shop.user.id,
+                    "email": shop.user.email,
+                    "full_name": shop.user.full_name
+                } if shop.user else None
+            }
+            for shop in shops
+        ]
+    }
+
 
 # ==================== SEARCH ====================
 @router.get("/products", response_model=List[ProductWithSupplier])
@@ -47,6 +100,7 @@ async def search_products(
     result = await db.execute(query)
     return result.scalars().all()
 
+
 @router.get("/suppliers", response_model=List[SupplierWithUser])
 async def search_suppliers(
     search: Optional[str] = None,
@@ -63,6 +117,7 @@ async def search_suppliers(
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
+
 
 # ==================== RFQ ====================
 @router.post("/rfq", response_model=RFQResponse)
@@ -96,6 +151,7 @@ async def create_rfq(
     await db.refresh(rfq)
     return rfq
 
+
 @router.get("/rfq", response_model=List[RFQWithDetails])
 async def get_my_rfqs(
     current_user: User = Depends(get_shop_user),
@@ -120,6 +176,7 @@ async def get_my_rfqs(
         .order_by(RFQ.created_at.desc())
     )
     return result.scalars().all()
+
 
 @router.get("/rfq/{rfq_id}", response_model=RFQWithDetails)
 async def get_rfq(
@@ -149,6 +206,7 @@ async def get_rfq(
         raise HTTPException(status_code=404, detail="RFQ not found")
     return rfq
 
+
 # ==================== CONTRACTS ====================
 @router.post("/contracts", response_model=ContractResponse)
 async def create_contract(
@@ -173,6 +231,7 @@ async def create_contract(
     await db.refresh(contract)
     return contract
 
+
 @router.get("/contracts", response_model=List[ContractResponse])
 async def get_my_contracts(
     current_user: User = Depends(get_shop_user),
@@ -191,6 +250,7 @@ async def get_my_contracts(
     )
     return result.scalars().all()
 
+
 # ==================== PROFILE ====================
 @router.get("/me", response_model=ShopResponse)
 async def get_my_profile(
@@ -205,6 +265,7 @@ async def get_my_profile(
     if not shop:
         raise HTTPException(status_code=404, detail="Shop profile not found")
     return shop
+
 
 @router.patch("/me", response_model=ShopResponse)
 async def update_my_profile(
