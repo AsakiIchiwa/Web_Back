@@ -32,6 +32,189 @@ def generate_order_code():
     return f"ORD-{now.strftime('%Y%m%d')}-{random_part}"
 
 
+# ==================== PAYMENT INFO ENDPOINTS (ĐẶT TRƯỚC) ====================
+
+@router.get("/payment-info/me")
+async def get_my_payment_info(
+    current_user: User = Depends(get_supplier_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get current supplier's payment info"""
+    result = await db.execute(select(Supplier).where(Supplier.user_id == current_user.id))
+    supplier = result.scalar_one_or_none()
+    
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    
+    result = await db.execute(
+        select(SupplierPaymentInfo).where(SupplierPaymentInfo.supplier_id == supplier.id)
+    )
+    payment_info = result.scalar_one_or_none()
+    
+    if not payment_info:
+        return {
+            "id": None,
+            "supplier_id": supplier.id,
+            "bank_name": None,
+            "bank_account": None,
+            "account_holder": None,
+            "qr_code_url": None
+        }
+    
+    return {
+        "id": payment_info.id,
+        "supplier_id": payment_info.supplier_id,
+        "bank_name": payment_info.bank_name,
+        "bank_account": payment_info.bank_account,
+        "account_holder": payment_info.account_holder,
+        "qr_code_url": payment_info.qr_code_url
+    }
+
+
+@router.put("/payment-info/me")
+async def update_my_payment_info_put(
+    data: PaymentInfoCreate,
+    current_user: User = Depends(get_supplier_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update current supplier's payment info (PUT)"""
+    return await _update_payment_info(data, current_user, db)
+
+
+@router.patch("/payment-info/me")
+async def update_my_payment_info_patch(
+    data: PaymentInfoCreate,
+    current_user: User = Depends(get_supplier_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update current supplier's payment info (PATCH)"""
+    return await _update_payment_info(data, current_user, db)
+
+
+@router.post("/payment-info/me")
+async def create_my_payment_info(
+    data: PaymentInfoCreate,
+    current_user: User = Depends(get_supplier_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create/Update current supplier's payment info (POST)"""
+    return await _update_payment_info(data, current_user, db)
+
+
+async def _update_payment_info(data: PaymentInfoCreate, current_user: User, db: AsyncSession):
+    """Helper function to update payment info"""
+    result = await db.execute(select(Supplier).where(Supplier.user_id == current_user.id))
+    supplier = result.scalar_one_or_none()
+    
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    
+    result = await db.execute(
+        select(SupplierPaymentInfo).where(SupplierPaymentInfo.supplier_id == supplier.id)
+    )
+    payment_info = result.scalar_one_or_none()
+    
+    if not payment_info:
+        payment_info = SupplierPaymentInfo(supplier_id=supplier.id)
+        db.add(payment_info)
+    
+    if data.bank_name is not None:
+        payment_info.bank_name = data.bank_name
+    if data.bank_account is not None:
+        payment_info.bank_account = data.bank_account
+    if data.account_holder is not None:
+        payment_info.account_holder = data.account_holder
+    if data.qr_code_url is not None:
+        payment_info.qr_code_url = data.qr_code_url
+    
+    payment_info.updated_at = datetime.utcnow()
+    
+    await db.commit()
+    await db.refresh(payment_info)
+    
+    return {
+        "id": payment_info.id,
+        "supplier_id": payment_info.supplier_id,
+        "bank_name": payment_info.bank_name,
+        "bank_account": payment_info.bank_account,
+        "account_holder": payment_info.account_holder,
+        "qr_code_url": payment_info.qr_code_url
+    }
+
+
+@router.post("/payment-info/qr-code")
+async def upload_qr_code(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_supplier_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Upload QR code image"""
+    result = await db.execute(select(Supplier).where(Supplier.user_id == current_user.id))
+    supplier = result.scalar_one_or_none()
+    
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    
+    file_ext = file.filename.split(".")[-1] if file.filename else "png"
+    filename = f"qr_{supplier.id}_{uuid.uuid4().hex[:8]}.{file_ext}"
+    file_path = UPLOAD_DIR / "qrcodes" / filename
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    content = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+    
+    qr_url = f"/uploads/qrcodes/{filename}"
+    
+    result = await db.execute(
+        select(SupplierPaymentInfo).where(SupplierPaymentInfo.supplier_id == supplier.id)
+    )
+    payment_info = result.scalar_one_or_none()
+    
+    if not payment_info:
+        payment_info = SupplierPaymentInfo(supplier_id=supplier.id, qr_code_url=qr_url)
+        db.add(payment_info)
+    else:
+        payment_info.qr_code_url = qr_url
+    
+    payment_info.updated_at = datetime.utcnow()
+    await db.commit()
+    
+    return {"message": "QR code uploaded", "url": qr_url}
+
+
+@router.get("/payment-info/{supplier_id}")
+async def get_supplier_payment_info(
+    supplier_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get supplier's payment info by ID"""
+    result = await db.execute(
+        select(SupplierPaymentInfo).where(SupplierPaymentInfo.supplier_id == supplier_id)
+    )
+    payment_info = result.scalar_one_or_none()
+    
+    if not payment_info:
+        return {
+            "id": None,
+            "supplier_id": supplier_id,
+            "bank_name": None,
+            "bank_account": None,
+            "account_holder": None,
+            "qr_code_url": None
+        }
+    
+    return {
+        "id": payment_info.id,
+        "supplier_id": payment_info.supplier_id,
+        "bank_name": payment_info.bank_name,
+        "bank_account": payment_info.bank_account,
+        "account_holder": payment_info.account_holder,
+        "qr_code_url": payment_info.qr_code_url
+    }
+
+
 # ==================== ORDER ENDPOINTS ====================
 
 @router.post("/", response_model=OrderResponse)
@@ -109,7 +292,6 @@ async def get_orders(
     result = await db.execute(query)
     orders = result.scalars().all()
     
-    # Convert to dict manually
     orders_data = []
     for order in orders:
         order_dict = {
@@ -131,7 +313,7 @@ async def get_orders(
             "updated_at": order.updated_at.isoformat() if order.updated_at else None,
             "contract": {
                 "id": order.contract.id,
-                "contract_code": order.contract.contract_code if hasattr(order.contract, 'contract_code') else None,
+                "contract_code": getattr(order.contract, 'contract_code', None),
                 "agreed_price": float(order.contract.agreed_price) if order.contract.agreed_price else 0,
                 "status": order.contract.status.value if order.contract.status else None,
                 "product": {
@@ -198,7 +380,7 @@ async def get_order(
         "updated_at": order.updated_at.isoformat() if order.updated_at else None,
         "contract": {
             "id": order.contract.id,
-            "contract_code": order.contract.contract_code if hasattr(order.contract, 'contract_code') else None,
+            "contract_code": getattr(order.contract, 'contract_code', None),
             "agreed_price": float(order.contract.agreed_price) if order.contract.agreed_price else 0,
             "status": order.contract.status.value if order.contract.status else None,
             "product": {
@@ -222,7 +404,7 @@ async def get_order(
     }
 
 
-@router.patch("/{order_id}/status", response_model=OrderResponse)
+@router.patch("/{order_id}/status")
 async def update_order_status(
     order_id: int,
     status: OrderStatus,
@@ -245,7 +427,7 @@ async def update_order_status(
     await db.commit()
     await db.refresh(order)
     
-    return order
+    return {"message": "Order status updated", "status": order.status.value}
 
 
 @router.post("/{order_id}/payment-proof")
@@ -262,7 +444,7 @@ async def upload_payment_proof(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
-    file_ext = file.filename.split(".")[-1]
+    file_ext = file.filename.split(".")[-1] if file.filename else "png"
     filename = f"payment_{order.order_code}_{uuid.uuid4().hex[:8]}.{file_ext}"
     file_path = UPLOAD_DIR / "payments" / filename
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -279,140 +461,3 @@ async def upload_payment_proof(
     await db.refresh(order)
     
     return {"message": "Payment proof uploaded", "url": order.payment_proof}
-
-
-# ==================== PAYMENT INFO ENDPOINTS ====================
-
-@router.get("/payment-info/me", response_model=PaymentInfoResponse)
-async def get_my_payment_info(
-    current_user: User = Depends(get_supplier_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get current supplier's payment info"""
-    result = await db.execute(select(Supplier).where(Supplier.user_id == current_user.id))
-    supplier = result.scalar_one_or_none()
-    
-    if not supplier:
-        raise HTTPException(status_code=404, detail="Supplier not found")
-    
-    result = await db.execute(
-        select(SupplierPaymentInfo).where(SupplierPaymentInfo.supplier_id == supplier.id)
-    )
-    payment_info = result.scalar_one_or_none()
-    
-    if not payment_info:
-        return PaymentInfoResponse(supplier_id=supplier.id)
-    
-    return payment_info
-
-
-@router.put("/payment-info/me", response_model=PaymentInfoResponse)
-async def update_my_payment_info_put(
-    data: PaymentInfoCreate,
-    current_user: User = Depends(get_supplier_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Update current supplier's payment info"""
-    return await _update_payment_info(data, current_user, db)
-
-
-@router.patch("/payment-info/me", response_model=PaymentInfoResponse)
-async def update_my_payment_info_patch(
-    data: PaymentInfoCreate,
-    current_user: User = Depends(get_supplier_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Patch current supplier's payment info"""
-    return await _update_payment_info(data, current_user, db)
-
-
-async def _update_payment_info(data: PaymentInfoCreate, current_user: User, db: AsyncSession):
-    """Helper function to update payment info"""
-    result = await db.execute(select(Supplier).where(Supplier.user_id == current_user.id))
-    supplier = result.scalar_one_or_none()
-    
-    if not supplier:
-        raise HTTPException(status_code=404, detail="Supplier not found")
-    
-    result = await db.execute(
-        select(SupplierPaymentInfo).where(SupplierPaymentInfo.supplier_id == supplier.id)
-    )
-    payment_info = result.scalar_one_or_none()
-    
-    if not payment_info:
-        payment_info = SupplierPaymentInfo(supplier_id=supplier.id)
-        db.add(payment_info)
-    
-    if data.bank_name is not None:
-        payment_info.bank_name = data.bank_name
-    if data.bank_account is not None:
-        payment_info.bank_account = data.bank_account
-    if data.account_holder is not None:
-        payment_info.account_holder = data.account_holder
-    if data.qr_code_url is not None:
-        payment_info.qr_code_url = data.qr_code_url
-    
-    payment_info.updated_at = datetime.utcnow()
-    
-    await db.commit()
-    await db.refresh(payment_info)
-    
-    return payment_info
-
-
-@router.post("/payment-info/qr-code")
-async def upload_qr_code(
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_supplier_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Upload QR code image"""
-    result = await db.execute(select(Supplier).where(Supplier.user_id == current_user.id))
-    supplier = result.scalar_one_or_none()
-    
-    if not supplier:
-        raise HTTPException(status_code=404, detail="Supplier not found")
-    
-    file_ext = file.filename.split(".")[-1]
-    filename = f"qr_{supplier.id}_{uuid.uuid4().hex[:8]}.{file_ext}"
-    file_path = UPLOAD_DIR / "qrcodes" / filename
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    content = await file.read()
-    with open(file_path, "wb") as f:
-        f.write(content)
-    
-    qr_url = f"/uploads/qrcodes/{filename}"
-    
-    result = await db.execute(
-        select(SupplierPaymentInfo).where(SupplierPaymentInfo.supplier_id == supplier.id)
-    )
-    payment_info = result.scalar_one_or_none()
-    
-    if not payment_info:
-        payment_info = SupplierPaymentInfo(supplier_id=supplier.id, qr_code_url=qr_url)
-        db.add(payment_info)
-    else:
-        payment_info.qr_code_url = qr_url
-    
-    await db.commit()
-    
-    return {"message": "QR code uploaded", "url": qr_url}
-
-
-@router.get("/payment-info/{supplier_id}", response_model=PaymentInfoResponse)
-async def get_supplier_payment_info(
-    supplier_id: int,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get supplier's payment info by ID"""
-    result = await db.execute(
-        select(SupplierPaymentInfo).where(SupplierPaymentInfo.supplier_id == supplier_id)
-    )
-    payment_info = result.scalar_one_or_none()
-    
-    if not payment_info:
-        return PaymentInfoResponse(supplier_id=supplier_id)
-    
-    return payment_info
