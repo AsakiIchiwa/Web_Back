@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.database import engine, Base
-from app.routers import auth, users, suppliers, shops, products, rfq, quotes, negotiations, contracts, admin, ai, notifications, upload
+from app.routers import auth, users, suppliers, shops, products, rfq, quotes, negotiations, contracts, admin, ai, notifications, upload, orders  # <-- Thêm orders
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -50,6 +50,7 @@ app.include_router(rfq.router, prefix="/rfq", tags=["RFQ"])
 app.include_router(quotes.router, prefix="/quotes", tags=["Quotes"])
 app.include_router(negotiations.router, prefix="/negotiations", tags=["Negotiations"])
 app.include_router(contracts.router, prefix="/contracts", tags=["Contracts"])
+app.include_router(orders.router, prefix="/orders", tags=["Orders"])  # <-- Thêm dòng này
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 app.include_router(ai.router, prefix="/ai", tags=["AI Features"])
 app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
