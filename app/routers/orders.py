@@ -1,21 +1,18 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from typing import List
 from datetime import datetime
 from pathlib import Path
 
 from app.database import get_db
 from app.models import (
     User, Supplier, Shop, Contract, ContractStatus, 
-    Order, OrderStatus, OrderTracking, PaymentMethod,
-    Notification, NotificationType, SupplierPaymentInfo
+    Order, OrderStatus, PaymentMethod, SupplierPaymentInfo
 )
 from app.schemas import (
-    OrderCreate, OrderResponse, OrderUpdate,
-    OrderTrackingResponse, PaymentInfoCreate, PaymentInfoResponse
+    OrderCreate, OrderResponse, PaymentInfoCreate, PaymentInfoResponse
 )
 from app.auth import get_current_user, get_supplier_user, get_shop_user
 
@@ -26,13 +23,12 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 
 def generate_order_code():
-    """Generate unique order code: ORD-YYYYMMDD-XXXX"""
     now = datetime.now()
     random_part = uuid.uuid4().hex[:4].upper()
     return f"ORD-{now.strftime('%Y%m%d')}-{random_part}"
 
 
-# ==================== PAYMENT INFO ENDPOINTS (ĐẶT TRƯỚC) ====================
+# ==================== PAYMENT INFO ENDPOINTS (PHẢI ĐẶT TRƯỚC /{order_id}) ====================
 
 @router.get("/payment-info/me")
 async def get_my_payment_info(
@@ -71,6 +67,16 @@ async def get_my_payment_info(
     }
 
 
+@router.post("/payment-info/me")
+async def create_my_payment_info(
+    data: PaymentInfoCreate,
+    current_user: User = Depends(get_supplier_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create/Update current supplier's payment info (POST)"""
+    return await _update_payment_info(data, current_user, db)
+
+
 @router.put("/payment-info/me")
 async def update_my_payment_info_put(
     data: PaymentInfoCreate,
@@ -88,16 +94,6 @@ async def update_my_payment_info_patch(
     db: AsyncSession = Depends(get_db)
 ):
     """Update current supplier's payment info (PATCH)"""
-    return await _update_payment_info(data, current_user, db)
-
-
-@router.post("/payment-info/me")
-async def create_my_payment_info(
-    data: PaymentInfoCreate,
-    current_user: User = Depends(get_supplier_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Create/Update current supplier's payment info (POST)"""
     return await _update_payment_info(data, current_user, db)
 
 
@@ -215,55 +211,7 @@ async def get_supplier_payment_info(
     }
 
 
-# ==================== ORDER ENDPOINTS ====================
-
-@router.post("/", response_model=OrderResponse)
-async def create_order(
-    data: OrderCreate,
-    current_user: User = Depends(get_shop_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Create new order from contract (Shop only)"""
-    result = await db.execute(select(Shop).where(Shop.user_id == current_user.id))
-    shop = result.scalar_one_or_none()
-    if not shop:
-        raise HTTPException(status_code=404, detail="Shop not found")
-    
-    result = await db.execute(
-        select(Contract)
-        .options(selectinload(Contract.product))
-        .where(Contract.id == data.contract_id)
-    )
-    contract = result.scalar_one_or_none()
-    if not contract:
-        raise HTTPException(status_code=404, detail="Contract not found")
-    
-    if contract.shop_id != shop.id:
-        raise HTTPException(status_code=403, detail="Contract does not belong to you")
-    
-    if contract.status != ContractStatus.ACTIVE:
-        raise HTTPException(status_code=400, detail="Contract is not active")
-    
-    order = Order(
-        order_code=generate_order_code(),
-        contract_id=contract.id,
-        supplier_id=contract.supplier_id,
-        shop_id=shop.id,
-        quantity=data.quantity,
-        unit_price=contract.agreed_price,
-        total_amount=contract.agreed_price * data.quantity,
-        shipping_address=data.shipping_address,
-        note=data.note,
-        status=OrderStatus.PENDING,
-        payment_method=data.payment_method or PaymentMethod.BANK_TRANSFER,
-    )
-    
-    db.add(order)
-    await db.commit()
-    await db.refresh(order)
-    
-    return order
-
+# ==================== ORDER ENDPOINTS (SAU PAYMENT INFO) ====================
 
 @router.get("/")
 async def get_orders(
@@ -338,6 +286,52 @@ async def get_orders(
         orders_data.append(order_dict)
     
     return orders_data
+
+
+@router.post("/", response_model=OrderResponse)
+async def create_order(
+    data: OrderCreate,
+    current_user: User = Depends(get_shop_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create new order from contract (Shop only)"""
+    result = await db.execute(select(Shop).where(Shop.user_id == current_user.id))
+    shop = result.scalar_one_or_none()
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    
+    result = await db.execute(
+        select(Contract).where(Contract.id == data.contract_id)
+    )
+    contract = result.scalar_one_or_none()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+    
+    if contract.shop_id != shop.id:
+        raise HTTPException(status_code=403, detail="Contract does not belong to you")
+    
+    if contract.status != ContractStatus.ACTIVE:
+        raise HTTPException(status_code=400, detail="Contract is not active")
+    
+    order = Order(
+        order_code=generate_order_code(),
+        contract_id=contract.id,
+        supplier_id=contract.supplier_id,
+        shop_id=shop.id,
+        quantity=data.quantity,
+        unit_price=contract.agreed_price,
+        total_amount=contract.agreed_price * data.quantity,
+        shipping_address=data.shipping_address,
+        note=data.note,
+        status=OrderStatus.PENDING,
+        payment_method=data.payment_method or PaymentMethod.BANK_TRANSFER,
+    )
+    
+    db.add(order)
+    await db.commit()
+    await db.refresh(order)
+    
+    return order
 
 
 @router.get("/{order_id}")
@@ -458,6 +452,5 @@ async def upload_payment_proof(
     order.paid_at = datetime.utcnow()
     
     await db.commit()
-    await db.refresh(order)
     
     return {"message": "Payment proof uploaded", "url": order.payment_proof}
