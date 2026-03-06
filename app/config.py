@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from typing import List, Optional
+from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
 import os
 
 class Settings(BaseSettings):
@@ -9,10 +10,10 @@ class Settings(BaseSettings):
     # JWT
     SECRET_KEY: str = "ddd8483072cef66d7e8d71bc67cc4006"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
-    # CORS - as string, will be parsed manually
+    # CORS
     CORS_ORIGINS: str = ""
     
     # SMTP Email Settings
@@ -21,13 +22,11 @@ class Settings(BaseSettings):
     SMTP_USER: Optional[str] = None
     SMTP_PASSWORD: Optional[str] = None
     
-
-    # Resend API (recommended for production)
+    # Resend API
     RESEND_API_KEY: Optional[str] = "re_YivFiCdu_FTCnoD2JbtgGGFQLNfMTYiwT"
-    EMAIL_FROM: Optional[str] = "B2B Marketplace <noreply@bmdtlab.site>"  # e.g., "B2B Marketplace <noreply@yourdomain.com>"
+    EMAIL_FROM: Optional[str] = "B2B Marketplace <noreply@bmdtlab.site>"
     
-    
-    # Frontend URL (for email links)
+    # Frontend URL
     FRONTEND_URL: str = "https://b2b-marketplace-zeta.vercel.app"
     
     # App
@@ -38,35 +37,33 @@ class Settings(BaseSettings):
         extra = "allow"
 
     def get_cors_origins(self) -> List[str]:
-        """Parse CORS_ORIGINS string to list"""
-        # Default origins
         default_origins = [
             "https://b2b-marketplace-zeta.vercel.app",
             "http://localhost:3000",
             "http://localhost:5173",
             "http://127.0.0.1:5173",
         ]
-        
-        # If CORS_ORIGINS is "*", allow all
         if self.CORS_ORIGINS == "*":
             return ["*"]
-        
-        # Parse from environment
         if self.CORS_ORIGINS:
             env_origins = [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
-            # Combine with defaults (avoid duplicates)
-            all_origins = list(set(default_origins + env_origins))
-            return all_origins
-        
+            return list(set(default_origins + env_origins))
         return default_origins
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         
-        # Fix DATABASE_URL for asyncpg (Render uses postgres://)
+        # Fix driver: postgres:// or postgresql:// → postgresql+asyncpg://
         if self.DATABASE_URL.startswith("postgres://"):
             self.DATABASE_URL = self.DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
         elif self.DATABASE_URL.startswith("postgresql://") and "+asyncpg" not in self.DATABASE_URL:
             self.DATABASE_URL = self.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+        
+        # Strip sslmode from URL (asyncpg rejects it as a query param)
+        if "sslmode=" in self.DATABASE_URL:
+            parsed = urlparse(self.DATABASE_URL)
+            params = {k: v for k, v in parse_qs(parsed.query).items() if k != "sslmode"}
+            clean_query = urlencode({k: v[0] for k, v in params.items()})
+            self.DATABASE_URL = urlunparse(parsed._replace(query=clean_query))
 
 settings = Settings()
